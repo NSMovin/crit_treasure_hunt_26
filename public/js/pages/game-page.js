@@ -9,9 +9,11 @@ import { onActiveTasksChange,
          getActiveTasks }                 from '/js/db/tasks.js';
 import { getUserUnlockedTaskIds,
          onUserUnlocksChange }            from '/js/db/unlocked-tasks.js';
-import { onUserChange }                   from '/js/db/users.js';
+import { onUserChange,
+         onSessionScoreChange }           from '/js/db/users.js';
 import { onAnnouncementsChange }          from '/js/db/announcements.js';
-import { onGameStateChange }              from '/js/db/game-state.js';
+import { onGameStateChange,
+         getActiveSessionId }             from '/js/db/game-state.js';
 import { showToast, escapeHTML, formatTime } from '/js/ui.js';
 
 const unsubs = [];
@@ -23,8 +25,10 @@ const unsubs = [];
   const { uid, profile } = session;
   touchLastActive(uid);
 
+  const sessionId = await getActiveSessionId();
+
   renderShell(profile);
-  attachListeners(uid, profile);
+  attachListeners(uid, profile, sessionId);
 })().catch((err) => {
   console.error('game-page init error:', err);
   document.getElementById('task-list').innerHTML =
@@ -46,16 +50,30 @@ function renderShell(profile) {
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
 
-function attachListeners(uid, profile) {
-  unsubs.push(
-    onUserChange(uid, (data) => {
-      document.getElementById('player-score').textContent = data.score || 0;
-      renderCompletedMarkers(data.tasks_completed || []);
-    })
-  );
+function attachListeners(uid, profile, sessionId) {
+  if (sessionId) {
+    // Show session score live; still watch users table for completed markers
+    unsubs.push(
+      onSessionScoreChange(uid, sessionId, (score) => {
+        document.getElementById('player-score').textContent = score;
+      })
+    );
+    unsubs.push(
+      onUserChange(uid, (data) => {
+        renderCompletedMarkers(data.tasks_completed || []);
+      })
+    );
+  } else {
+    unsubs.push(
+      onUserChange(uid, (data) => {
+        document.getElementById('player-score').textContent = data.score || 0;
+        renderCompletedMarkers(data.tasks_completed || []);
+      })
+    );
+  }
 
   // Fetch unlock state first, then subscribe to active task changes
-  getUserUnlockedTaskIds(uid).then((ids) => {
+  getUserUnlockedTaskIds(uid, sessionId).then((ids) => {
     _unlockedTaskIds = ids;
     unsubs.push(
       onActiveTasksChange((tasks) =>
@@ -71,7 +89,7 @@ function attachListeners(uid, profile) {
       getActiveTasks().then((tasks) =>
         renderTaskList(tasks, _completedTasks, _unlockedTaskIds)
       );
-    })
+    }, sessionId)
   );
 
   unsubs.push(

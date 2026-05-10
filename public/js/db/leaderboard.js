@@ -9,40 +9,46 @@ import { APP_SETTINGS } from '/js/app-settings.js';
 
 const LIMIT = APP_SETTINGS.leaderboard.displayLimit;
 
-async function fetchLeaderboard() {
+async function fetchLeaderboard(sessionId = null) {
+  if (sessionId) {
+    const { data } = await sb
+      .from('session_leaderboard')
+      .select('user_id, full_name, team_name, score, tasks_completed')
+      .eq('session_id', sessionId)
+      .order('score', { ascending: false })
+      .limit(LIMIT);
+    return (data || []).map((r) => ({ ...r, tasks_completed: (r.tasks_completed || []).length }));
+  }
+
   const { data } = await sb
     .from('users')
     .select('id, full_name, team_name, score, tasks_completed')
     .order('score', { ascending: false })
     .limit(LIMIT);
-
-  return (data || []).map((u) => ({
-    ...u,
-    tasks_completed: (u.tasks_completed || []).length   // expose count, not array
-  }));
+  return (data || []).map((u) => ({ ...u, tasks_completed: (u.tasks_completed || []).length }));
 }
 
 /**
  * Subscribes to real-time leaderboard changes.
- * Re-fetches the sorted list whenever any user's score changes.
+ * When sessionId is provided, listens to session_scores; otherwise listens to users.
  * @returns {function} Unsubscribe function
  */
-export function onLeaderboardChange(callback) {
-  fetchLeaderboard().then(callback);
-
-  const channel = sb.channel('leaderboard')
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' },
-      () => fetchLeaderboard().then(callback))
+export function onLeaderboardChange(sessionId, callback) {
+  const table   = sessionId ? 'session_scores' : 'users';
+  const channel = sb.channel('leaderboard-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table },
+      () => fetchLeaderboard(sessionId).then(callback))
     .subscribe();
 
+  fetchLeaderboard(sessionId).then(callback);
   return () => sb.removeChannel(channel);
 }
 
 /**
  * One-time fetch of the leaderboard (for admin use).
  */
-export async function getLeaderboard() {
-  return fetchLeaderboard();
+export async function getLeaderboard(sessionId = null) {
+  return fetchLeaderboard(sessionId);
 }
 
 /**

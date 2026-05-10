@@ -10,29 +10,22 @@ import { sb } from '/js/supabase-client.js';
  * Inserts a completed attempt row.
  */
 export async function submitAttempt(attempt) {
-  const { error } = await sb.from('attempts').insert({
-    user_id:         attempt.user_id,
-    task_id:         attempt.task_id,
-    result:          attempt.result,
-    score_delta:     attempt.score_delta || 0,
-    time_taken_sec:  attempt.time_taken_sec || 0,
-    is_first_solver: attempt.is_first_solver || false,
-    attempts_count:  attempt.attempts_count || 1,
-    photo_url:       attempt.photo_url || null
-  });
+  const { error } = await sb.from('attempts').insert({ ...attempt });
   if (error) throw error;
 }
 
 /**
  * Counts wrong attempts for a user on a specific task.
+ * When sessionId is provided, filters by session.
  */
-export async function countWrongAttempts(userId, taskId) {
-  const { count } = await sb
-    .from('attempts')
+export async function countWrongAttempts(userId, taskId, sessionId = null) {
+  let q = sb.from('attempts')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('task_id', taskId)
     .eq('result', 'wrong');
+  if (sessionId) q = q.eq('session_id', sessionId);
+  const { count } = await q;
   return count || 0;
 }
 
@@ -40,10 +33,11 @@ export async function countWrongAttempts(userId, taskId) {
  * Atomically claims the first-solver slot for a task via a Postgres function.
  * Returns true if this call claimed it, false if already taken by someone else.
  */
-export async function claimFirstSolver(userId, taskId) {
+export async function claimFirstSolver(userId, taskId, sessionId = null) {
   const { data, error } = await sb.rpc('claim_first_solver', {
-    p_task_id: taskId,
-    p_user_id: userId
+    p_task_id:    taskId,
+    p_user_id:    userId,
+    p_session_id: sessionId
   });
   if (error) throw error;
   return data === true;

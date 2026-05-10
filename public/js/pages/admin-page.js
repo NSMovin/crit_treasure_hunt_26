@@ -10,6 +10,7 @@ import { renderTaskManager }             from '/js/admin/task-manager.js';
 import { renderAnnouncementManager }     from '/js/admin/announcement-manager.js';
 import { renderPlayerMonitor }           from '/js/admin/player-monitor.js';
 import { renderHintManager }             from '/js/admin/hint-manager.js';
+import { renderSessionManager }          from '/js/admin/session-manager.js';
 import { APP_SETTINGS }                  from '/js/app-settings.js';
 import { showToast, showSpinner,
          hideSpinner, escapeHTML }       from '/js/ui.js';
@@ -87,7 +88,7 @@ function renderDashboard() {
       </header>
 
       <nav class="admin-tabs" role="tablist">
-        ${['tasks','players','announcements','hints','settings'].map((tab, i) => `
+        ${['tasks','players','announcements','hints','settings','sessions'].map((tab, i) => `
           <button class="admin-tab ${i === 0 ? 'admin-tab--active' : ''}"
                   data-panel="${tab}" role="tab">${tabLabel(tab)}</button>
         `).join('')}
@@ -133,6 +134,7 @@ async function loadPanel(name) {
       case 'announcements': await renderAnnouncementManager(content, _panelUnsubs); break;
       case 'hints':         await renderHintManager(content, _panelUnsubs);         break;
       case 'settings':      await renderSettings(content);                          break;
+      case 'sessions':      await renderSessionManager(content, _panelUnsubs);      break;
     }
   } catch (err) {
     console.error(`Panel "${name}" failed to load:`, err);
@@ -225,6 +227,7 @@ function tabLabel(tab) {
     players:       '👥 Players',
     announcements: '📢 Announcements',
     hints:         '💡 Hints',
-    settings:      '⚙️ Settings'
+    settings:      '⚙️ Settings',
+    sessions:      '🎮 Sessions'
   }[tab] || tab;
 }

@@ -227,3 +227,141 @@ BEGIN
   END;
 END;
 $$;
+
+-- ── MIGRATION v3: Session-based game system ────────────────────────────────────
+-- Already applied to live DB. Run this block if setting up a fresh project.
+
+-- 1. game_sessions table
+CREATE TABLE IF NOT EXISTS game_sessions (
+  id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name          TEXT NOT NULL,
+  is_active     BOOLEAN DEFAULT FALSE,
+  first_solvers JSONB DEFAULT '{}',
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  ended_at      TIMESTAMPTZ
+);
+
+-- 2. session_scores table (per-user, per-session score tracking)
+CREATE TABLE IF NOT EXISTS session_scores (
+  id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  session_id      BIGINT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+  score           INTEGER DEFAULT 0,
+  tasks_completed TEXT[] DEFAULT '{}',
+  UNIQUE (user_id, session_id)
+);
+
+-- 3. Indexes
+CREATE INDEX IF NOT EXISTS idx_game_sessions_active  ON game_sessions (is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_session_scores_session ON session_scores (session_id);
+CREATE INDEX IF NOT EXISTS idx_session_scores_score   ON session_scores (session_id, score DESC);
+
+-- 4. Add active_session_id pointer to game_state singleton
+ALTER TABLE game_state ADD COLUMN IF NOT EXISTS active_session_id BIGINT REFERENCES game_sessions(id);
+
+-- 5. Add session_id (nullable) to attempts, unlocked_tasks, announcements
+ALTER TABLE attempts      ADD COLUMN IF NOT EXISTS session_id BIGINT REFERENCES game_sessions(id);
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS session_id BIGINT REFERENCES game_sessions(id);
+
+-- For unlocked_tasks: replace UNIQUE(user_id, task_id) with UNIQUE(user_id, session_id, task_id)
+ALTER TABLE unlocked_tasks DROP CONSTRAINT IF EXISTS unlocked_tasks_user_id_task_id_key;
+ALTER TABLE unlocked_tasks ADD COLUMN IF NOT EXISTS session_id BIGINT REFERENCES game_sessions(id);
+ALTER TABLE unlocked_tasks ADD CONSTRAINT unlocked_tasks_user_session_task_key
+  UNIQUE NULLS NOT DISTINCT (user_id, session_id, task_id);
+
+-- 6. RLS for new tables
+ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "game_sessions_read"  ON game_sessions FOR SELECT USING (true);
+CREATE POLICY "game_sessions_write" ON game_sessions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE session_scores ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "session_scores_read" ON session_scores FOR SELECT USING (true);
+
+-- 7. Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
+ALTER PUBLICATION supabase_realtime ADD TABLE session_scores;
+
+-- 8. Leaderboard view (joins session_scores with users for display fields)
+CREATE OR REPLACE VIEW session_leaderboard AS
+SELECT
+  ss.user_id,
+  ss.session_id,
+  ss.score,
+  ss.tasks_completed,
+  u.full_name,
+  u.team_name
+FROM session_scores ss
+JOIN users u ON ss.user_id = u.id;
+
+-- 9. Updated add_score RPC (adds p_session_id parameter, DEFAULT NULL for backward compat)
+CREATE OR REPLACE FUNCTION add_score(
+  p_user_id    UUID,
+  p_delta      INTEGER,
+  p_task_id    TEXT,
+  p_session_id BIGINT DEFAULT NULL
+)
+RETURNS INTEGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF auth.uid() IS DISTINCT FROM p_user_id THEN RAISE EXCEPTION 'Unauthorized'; END IF;
+
+  UPDATE users SET
+    score           = score + p_delta,
+    tasks_completed = array_append(tasks_completed, p_task_id),
+    last_active     = NOW()
+  WHERE id = p_user_id;
+
+  IF p_session_id IS NOT NULL THEN
+    INSERT INTO session_scores (user_id, session_id, score, tasks_completed)
+    VALUES (p_user_id, p_session_id, p_delta, ARRAY[p_task_id])
+    ON CONFLICT (user_id, session_id) DO UPDATE SET
+      score           = session_scores.score + EXCLUDED.score,
+      tasks_completed = array_append(session_scores.tasks_completed, p_task_id);
+  END IF;
+
+  RETURN (SELECT score FROM users WHERE id = p_user_id);
+END;
+$$;
+
+-- 10. Updated claim_first_solver RPC (uses game_sessions.first_solvers when session provided)
+CREATE OR REPLACE FUNCTION claim_first_solver(
+  p_task_id    TEXT,
+  p_user_id    UUID,
+  p_session_id BIGINT DEFAULT NULL
+)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_solvers JSONB;
+BEGIN
+  IF p_session_id IS NOT NULL THEN
+    SELECT first_solvers INTO v_solvers FROM game_sessions WHERE id = p_session_id FOR UPDATE;
+    IF v_solvers ? p_task_id THEN RETURN FALSE; END IF;
+    UPDATE game_sessions SET first_solvers = first_solvers || jsonb_build_object(p_task_id, p_user_id::TEXT)
+    WHERE id = p_session_id;
+    RETURN TRUE;
+  ELSE
+    SELECT first_solvers INTO v_solvers FROM game_state WHERE id = 1 FOR UPDATE;
+    IF v_solvers ? p_task_id THEN RETURN FALSE; END IF;
+    UPDATE game_state SET first_solvers = first_solvers || jsonb_build_object(p_task_id, p_user_id::TEXT)
+    WHERE id = 1;
+    RETURN TRUE;
+  END IF;
+END;
+$$;
+
+-- 11. Updated unlock_task RPC (accepts optional p_session_id)
+CREATE OR REPLACE FUNCTION unlock_task(p_user_id UUID, p_task_id TEXT, p_session_id BIGINT DEFAULT NULL)
+RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_active BOOLEAN;
+BEGIN
+  IF auth.uid() IS DISTINCT FROM p_user_id THEN RAISE EXCEPTION 'Unauthorized'; END IF;
+  SELECT active INTO v_active FROM tasks WHERE task_id = p_task_id;
+  IF NOT FOUND   THEN RETURN 'task_not_found'; END IF;
+  IF NOT v_active THEN RETURN 'task_not_active'; END IF;
+  BEGIN
+    INSERT INTO unlocked_tasks (user_id, task_id, session_id)
+    VALUES (p_user_id, p_task_id, p_session_id);
+    RETURN 'unlocked';
+  EXCEPTION WHEN unique_violation THEN RETURN 'already_unlocked';
+  END;
+END;
+$$;

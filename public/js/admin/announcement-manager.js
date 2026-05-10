@@ -5,6 +5,7 @@
 
 import { onAnnouncementsChange, sendAnnouncement,
          deleteAnnouncement, pinAnnouncement } from '/js/db/announcements.js';
+import { getActiveSessionId }                  from '/js/db/game-state.js';
 import { showToast, escapeHTML, formatTime }   from '/js/ui.js';
 
 export async function renderAnnouncementManager(container, unsubs) {
@@ -47,7 +48,8 @@ export async function renderAnnouncementManager(container, unsubs) {
     if (!message) { showToast('Message cannot be empty.', 'warning'); return; }
 
     try {
-      await sendAnnouncement({ message, type, pinned });
+      const sessionId = await getActiveSessionId();
+      await sendAnnouncement({ message, type, pinned, sessionId });
       document.getElementById('ann-msg').value = '';
       document.getElementById('ann-pin').checked = false;
       showToast('Announcement sent!', 'success');

@@ -5,7 +5,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { onLeaderboardChange, computeTeamScores } from '/js/db/leaderboard.js';
-import { escapeHTML } from '/js/ui.js';
+import { getActiveSessionId }                     from '/js/db/game-state.js';
+import { escapeHTML }                             from '/js/ui.js';
 
 let activeTab = 'individual';
 let _entries  = [];
@@ -13,13 +14,14 @@ const unsubs  = [];
 
 (async function init() {
   attachTabSwitcher();
-  startLeaderboardListener();
+  const sessionId = await getActiveSessionId();
+  startLeaderboardListener(sessionId);
 })();
 
 // ── Real-time listener ────────────────────────────────────────────────────────
 
-function startLeaderboardListener() {
-  const unsub = onLeaderboardChange((entries) => {
+function startLeaderboardListener(sessionId) {
+  const unsub = onLeaderboardChange(sessionId, (entries) => {
     _entries = entries;
     renderCurrentTab();
   });

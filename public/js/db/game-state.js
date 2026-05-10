@@ -45,3 +45,8 @@ export async function setGameActive(active) {
   const { error } = await sb.from('game_state').update(update).eq('id', 1);
   if (error) throw error;
 }
+
+export async function getActiveSessionId() {
+  const gs = await getGameState();
+  return gs?.active_session_id ?? null;
+}

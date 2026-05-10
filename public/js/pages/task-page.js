@@ -9,6 +9,7 @@ import { getTask }                                  from '/js/db/tasks.js';
 import { hasCompletedTask, addScore }               from '/js/db/users.js';
 import { submitAttempt, claimFirstSolver,
          countWrongAttempts }                       from '/js/db/attempts.js';
+import { getActiveSessionId }                       from '/js/db/game-state.js';
 import { calculateScore, formatBreakdown }          from '/js/scoring.js';
 import { uploadPhoto }                              from '/js/storage.js';
 import { showToast, showSpinner, hideSpinner,
@@ -36,6 +37,7 @@ const GAME_MODULE_MAP = {
   if (!session) return;
 
   const { uid, profile } = session;
+  const sessionId = await getActiveSessionId();
 
   const task = await getTask(taskId);
   if (!task) {
@@ -55,7 +57,7 @@ const GAME_MODULE_MAP = {
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
   if (!isAdmin && !task.is_public) {
     const { isTaskUnlocked } = await import('/js/db/unlocked-tasks.js');
-    const unlocked = await isTaskUnlocked(uid, taskId);
+    const unlocked = await isTaskUnlocked(uid, taskId, sessionId);
     if (!unlocked) {
       hideSpinner();
       showToast('Find the QR code to unlock this challenge.', 'warning');
@@ -64,7 +66,7 @@ const GAME_MODULE_MAP = {
     }
   }
 
-  const alreadyDone = await hasCompletedTask(uid, taskId);
+  const alreadyDone = await hasCompletedTask(uid, taskId, sessionId);
   if (alreadyDone) {
     hideSpinner();
     showToast('You\'ve already completed this task! 🎉', 'info');
@@ -83,7 +85,7 @@ const GAME_MODULE_MAP = {
 
   const container = document.getElementById('game-container');
   const { run }   = await import(modulePath);
-  run(task, container, (result) => handleCompletion(result, task, uid, profile));
+  run(task, container, (result) => handleCompletion(result, task, uid, profile, sessionId));
 })().catch((err) => {
   console.error('task-page init error:', err);
   hideSpinner();
@@ -119,7 +121,7 @@ function renderTaskHeader(task) {
 
 // ── Completion pipeline ───────────────────────────────────────────────────────
 
-async function handleCompletion(result, task, uid, profile) {
+async function handleCompletion(result, task, uid, profile, sessionId) {
   const { correct, timeTakenSec, wrongAttempts = 0, photoBase64 } = result;
   showSpinner();
 
@@ -129,9 +131,9 @@ async function handleCompletion(result, task, uid, profile) {
     let isFirst    = false;
 
     if (correct) {
-      isFirst = await claimFirstSolver(uid, task.task_id);
+      isFirst = await claimFirstSolver(uid, task.task_id, sessionId);
 
-      const prevWrong = wrongAttempts || await countWrongAttempts(uid, task.task_id);
+      const prevWrong = wrongAttempts || await countWrongAttempts(uid, task.task_id, sessionId);
 
       const scored = calculateScore({
         basePoints:          task.points,
@@ -143,7 +145,7 @@ async function handleCompletion(result, task, uid, profile) {
       finalScore = scored.finalScore;
       breakdown  = scored.breakdown;
 
-      await addScore(uid, finalScore, task.task_id);
+      await addScore(uid, finalScore, task.task_id, sessionId);
     }
 
     // Upload photo to Supabase Storage if present
@@ -159,6 +161,7 @@ async function handleCompletion(result, task, uid, profile) {
     await submitAttempt({
       user_id:         uid,
       task_id:         task.task_id,
+      session_id:      sessionId,
       result:          correct ? 'correct' : 'wrong',
       score_delta:     finalScore,
       time_taken_sec:  Math.round(timeTakenSec),

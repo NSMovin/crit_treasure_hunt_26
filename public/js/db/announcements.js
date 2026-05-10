@@ -40,12 +40,13 @@ export function onAnnouncementsChange(callback) {
 /**
  * Sends a new announcement (admin only).
  */
-export async function sendAnnouncement({ message, type = 'info', pinned = false, sentBy = 'Admin' }) {
+export async function sendAnnouncement({ message, type = 'info', pinned = false, sentBy = 'Admin', sessionId = null }) {
   const { error } = await sb.from('announcements').insert({
     message,
     type,
     pinned,
-    sent_by: sentBy
+    sent_by:    sentBy,
+    session_id: sessionId
   });
   if (error) throw error;
 }

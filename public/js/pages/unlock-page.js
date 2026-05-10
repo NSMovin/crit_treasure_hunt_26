@@ -4,10 +4,11 @@
 // QR code format: /unlock.html?task=<task_id>
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { requirePlayer } from '/js/router.js';
-import { getTask }       from '/js/db/tasks.js';
-import { unlockTask }    from '/js/db/unlocked-tasks.js';
-import { escapeHTML }    from '/js/ui.js';
+import { requirePlayer }      from '/js/router.js';
+import { getTask }            from '/js/db/tasks.js';
+import { unlockTask }         from '/js/db/unlocked-tasks.js';
+import { getActiveSessionId } from '/js/db/game-state.js';
+import { escapeHTML }         from '/js/ui.js';
 
 const statusEl = document.getElementById('unlock-status');
 
@@ -31,6 +32,7 @@ function showMessage(icon, heading, body, linkHref, linkText) {
   if (!session) return; // requirePlayer redirects to /index.html if not logged in
 
   const { uid } = session;
+  const sessionId = await getActiveSessionId();
 
   const task = await getTask(taskId);
   if (!task) {
@@ -42,7 +44,7 @@ function showMessage(icon, heading, body, linkHref, linkText) {
     return;
   }
 
-  const status = await unlockTask(uid, taskId);
+  const status = await unlockTask(uid, taskId, sessionId);
 
   if (status === 'unlocked' || status === 'already_unlocked') {
     showMessage('🔓', 'Task Unlocked!', `"${task.title}" is now available. Redirecting…`, '', '');
