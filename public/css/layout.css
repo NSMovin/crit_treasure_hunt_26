@@ -1,0 +1,152 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   layout.css — Page shell, header, bottom nav, content wrappers
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── App shell ──────────────────────────────────────────────────────────────── */
+#app {
+  min-height:  100dvh;
+  display:     flex;
+  flex-direction: column;
+}
+
+/* ── Page container ─────────────────────────────────────────────────────────── */
+.page {
+  display:        flex;
+  flex-direction: column;
+  min-height:     100dvh;
+}
+
+.page__content {
+  flex:       1;
+  padding:    var(--sp-md);
+  max-width:  640px;
+  width:      100%;
+  margin:     0 auto;
+  padding-bottom: calc(var(--sp-md) + 70px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Top header bar ─────────────────────────────────────────────────────────── */
+.top-bar {
+  position:   sticky;
+  top:        0;
+  z-index:    100;
+  background: var(--clr-surface);
+  border-bottom: 1px solid var(--clr-border);
+  display:    flex;
+  align-items: center;
+  justify-content: space-between;
+  padding:    var(--sp-sm) var(--sp-md);
+  padding-top: calc(var(--sp-sm) + env(safe-area-inset-top, 0px));
+}
+
+.top-bar__title {
+  font-size:   var(--font-sz-md);
+  font-weight: 700;
+  color:       var(--clr-text);
+}
+
+.top-bar__score {
+  display:     flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size:   var(--font-sz-sm);
+  color:       var(--clr-text-muted);
+}
+.top-bar__score strong {
+  font-size:  var(--font-sz-lg);
+  color:      var(--clr-accent);
+}
+
+/* ── Bottom navigation bar ──────────────────────────────────────────────────── */
+.bottom-nav {
+  position:   fixed;
+  bottom:     0;
+  left:       0;
+  right:      0;
+  z-index:    100;
+  background: var(--clr-surface);
+  border-top: 1px solid var(--clr-border);
+  display:    flex;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.bottom-nav__item {
+  flex:            1;
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  padding:         10px var(--sp-xs);
+  color:           var(--clr-text-muted);
+  font-size:       11px;
+  text-decoration: none;
+  gap:             2px;
+  cursor:          pointer;
+  border:          none;
+  background:      none;
+  font-family:     var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-nav__item--active { color: var(--clr-primary-h); }
+.bottom-nav__icon { font-size: 22px; line-height: 1; }
+
+/* Center QR scan button */
+.bottom-nav__scan {
+  flex:            1;
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  padding:         8px var(--sp-xs);
+  text-decoration: none;
+  gap:             2px;
+}
+.bottom-nav__scan-btn {
+  width:           52px;
+  height:          52px;
+  border-radius:   var(--radius-full);
+  background:      var(--clr-primary);
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  font-size:       26px;
+  box-shadow:      var(--shadow-btn);
+  margin-top:      -20px;
+}
+.bottom-nav__scan span { font-size: 11px; color: var(--clr-text-muted); }
+
+/* ── Announcements bar ──────────────────────────────────────────────────────── */
+.announcements-bar {
+  background:    var(--clr-surface);
+  border-bottom: 1px solid var(--clr-border);
+  padding:       var(--sp-xs) var(--sp-md);
+}
+
+.announcement {
+  display:       flex;
+  align-items:   flex-start;
+  gap:           var(--sp-sm);
+  padding:       var(--sp-sm) 0;
+  border-bottom: 1px solid var(--clr-border);
+  font-size:     var(--font-sz-sm);
+}
+.announcement:last-child { border-bottom: none; }
+.announcement--info      { border-left: 3px solid var(--clr-info);    padding-left: var(--sp-sm); }
+.announcement--warning   { border-left: 3px solid var(--clr-warning); padding-left: var(--sp-sm); }
+.announcement--hint_release  { border-left: 3px solid var(--clr-accent);  padding-left: var(--sp-sm); }
+.announcement--task_activate { border-left: 3px solid var(--clr-success); padding-left: var(--sp-sm); }
+.announcement--pinned    { background: rgba(245,166,35,0.06); }
+.announcement__pin       { flex-shrink: 0; }
+.announcement__msg       { flex: 1; color: var(--clr-text); }
+.announcement__time      { flex-shrink: 0; color: var(--clr-text-muted); font-size: 11px; }
+
+/* ── Game status banner ─────────────────────────────────────────────────────── */
+#game-status-banner {
+  display:    none;
+  background: rgba(231,76,60,0.15);
+  border:     1px solid var(--clr-error);
+  color:      var(--clr-error);
+  text-align: center;
+  padding:    var(--sp-sm) var(--sp-md);
+  font-weight: 600;
+}

@@ -1,0 +1,79 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   leaderboard.css — Leaderboard page styles (leaderboard.html)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Tab bar ────────────────────────────────────────────────────────────────── */
+.tab-bar {
+  display:        flex;
+  background:     var(--clr-surface);
+  border-bottom:  1px solid var(--clr-border);
+  padding:        var(--sp-xs) var(--sp-md) 0;
+  gap:            var(--sp-xs);
+}
+
+.tab-bar [data-tab] {
+  padding:       10px var(--sp-md);
+  background:    none;
+  border:        none;
+  border-bottom: 2px solid transparent;
+  color:         var(--clr-text-muted);
+  font-family:   var(--font);
+  font-size:     var(--font-sz-sm);
+  font-weight:   600;
+  cursor:        pointer;
+  transition:    color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-bar [data-tab].tab--active {
+  color:         var(--clr-primary-h);
+  border-bottom-color: var(--clr-primary-h);
+}
+
+/* ── Leaderboard body ───────────────────────────────────────────────────────── */
+#leaderboard-body {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--sp-xs);
+  padding:        var(--sp-sm);
+}
+
+/* ── Row ────────────────────────────────────────────────────────────────────── */
+.lb-row {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--sp-md);
+  padding:       var(--sp-sm) var(--sp-md);
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+}
+.lb-row--top3 {
+  background: var(--clr-surface-2);
+  border-color: var(--clr-primary);
+  box-shadow: 0 2px 12px rgba(108,60,225,0.2);
+}
+.lb-row:first-child { border-color: var(--clr-accent); }
+
+.lb-row__rank   { font-size: 22px; width: 40px; text-align: center; flex-shrink: 0; }
+.lb-row__info   { flex: 1; min-width: 0; }
+.lb-row__name   { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-row__team   { display: block; font-size: var(--font-sz-sm); color: var(--clr-text-muted); }
+.lb-row__right  { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
+.lb-row__score  { font-size: var(--font-sz-lg); font-weight: 800; color: var(--clr-accent); }
+.lb-row__tasks  { font-size: 11px; color: var(--clr-text-muted); }
+
+/* ── Live indicator ─────────────────────────────────────────────────────────── */
+.live-dot {
+  display:       inline-block;
+  width:         8px;
+  height:        8px;
+  border-radius: 50%;
+  background:    var(--clr-success);
+  animation:     pulse 1.5s ease-in-out infinite;
+  margin-right:  var(--sp-xs);
+  vertical-align: middle;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}

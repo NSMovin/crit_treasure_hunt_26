@@ -1,0 +1,170 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   admin.css — Admin dashboard styles (admin.html)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Passcode gate ──────────────────────────────────────────────────────────── */
+.admin-gate {
+  min-height:      100dvh;
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  padding:         var(--sp-lg);
+  gap:             var(--sp-md);
+  text-align:      center;
+  max-width:       400px;
+  margin:          0 auto;
+}
+.admin-gate__logo  { font-size: 64px; }
+.admin-gate__title { font-size: var(--font-sz-xl); }
+.admin-gate__sub   { color: var(--clr-text-muted); }
+.admin-gate .input { text-align: center; letter-spacing: 4px; font-size: var(--font-sz-lg); }
+.admin-gate .btn   { width: 100%; }
+.admin-gate__error { color: var(--clr-error); font-size: var(--font-sz-sm); min-height: 1.4em; }
+
+/* ── Dashboard layout ───────────────────────────────────────────────────────── */
+.admin-dashboard {
+  display:        flex;
+  flex-direction: column;
+  min-height:     100dvh;
+}
+
+/* ── Admin header ───────────────────────────────────────────────────────────── */
+.admin-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         var(--sp-sm) var(--sp-md);
+  padding-top:     calc(var(--sp-sm) + env(safe-area-inset-top, 0px));
+  background:      var(--clr-surface);
+  border-bottom:   1px solid var(--clr-border);
+  position:        sticky;
+  top:             0;
+  z-index:         10;
+}
+.admin-header__title { font-size: var(--font-sz-md); font-weight: 700; }
+
+/* ── Tab strip ──────────────────────────────────────────────────────────────── */
+.admin-tabs {
+  display:          flex;
+  overflow-x:       auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width:  none;
+  background:       var(--clr-surface);
+  border-bottom:    1px solid var(--clr-border);
+  padding:          0 var(--sp-sm);
+}
+.admin-tabs::-webkit-scrollbar { display: none; }
+
+.admin-tab {
+  flex-shrink:     0;
+  padding:         10px var(--sp-md);
+  background:      none;
+  border:          none;
+  border-bottom:   2px solid transparent;
+  color:           var(--clr-text-muted);
+  font-family:     var(--font);
+  font-size:       var(--font-sz-sm);
+  font-weight:     600;
+  cursor:          pointer;
+  white-space:     nowrap;
+  transition:      color 0.15s, border-color 0.15s;
+}
+.admin-tab--active {
+  color:           var(--clr-primary-h);
+  border-bottom-color: var(--clr-primary-h);
+}
+
+/* ── Content area ───────────────────────────────────────────────────────────── */
+.admin-content {
+  flex:       1;
+  padding:    var(--sp-md);
+  max-width:  800px;
+  width:      100%;
+  margin:     0 auto;
+}
+
+/* ── Panel ──────────────────────────────────────────────────────────────────── */
+.admin-panel > h2   { margin-bottom: var(--sp-md); }
+.admin-panel__header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  margin-bottom:   var(--sp-md);
+  flex-wrap:       wrap;
+  gap:             var(--sp-sm);
+}
+.admin-hint { color: var(--clr-text-muted); font-size: var(--font-sz-sm); margin-bottom: var(--sp-md); }
+
+/* ── Task rows ──────────────────────────────────────────────────────────────── */
+.task-row {
+  display:       flex;
+  align-items:   center;
+  justify-content: space-between;
+  gap:           var(--sp-sm);
+  padding:       var(--sp-sm) var(--sp-md);
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-xs);
+  flex-wrap:     wrap;
+}
+.task-row__info    { display: flex; align-items: center; gap: var(--sp-xs); flex-wrap: wrap; }
+.task-row__actions { display: flex; gap: var(--sp-xs); flex-shrink: 0; }
+
+/* ── Announcement rows ──────────────────────────────────────────────────────── */
+.ann-row {
+  display:       flex;
+  align-items:   flex-start;
+  justify-content: space-between;
+  gap:           var(--sp-sm);
+  padding:       var(--sp-sm) var(--sp-md);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-xs);
+  flex-wrap:     wrap;
+}
+.ann-row__body  { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.ann-row__meta  { color: var(--clr-text-muted); }
+.ann-row__actions { display: flex; gap: var(--sp-xs); flex-shrink: 0; }
+
+/* ── Hint rows ──────────────────────────────────────────────────────────────── */
+.hint-row {
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding:       var(--sp-md);
+  margin-bottom: var(--sp-sm);
+}
+.hint-row__header  { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-sm); }
+.hint-row__input   { flex: 1; }
+
+/* ── Admin table ────────────────────────────────────────────────────────────── */
+.table-wrap   { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.admin-table  {
+  width:           100%;
+  border-collapse: collapse;
+  font-size:       var(--font-sz-sm);
+  white-space:     nowrap;
+}
+.admin-table th {
+  text-align:      left;
+  padding:         var(--sp-xs) var(--sp-sm);
+  color:           var(--clr-text-muted);
+  font-weight:     600;
+  border-bottom:   1px solid var(--clr-border);
+}
+.admin-table td {
+  padding:         var(--sp-xs) var(--sp-sm);
+  border-bottom:   1px solid var(--clr-border);
+}
+.admin-table tr:hover td { background: var(--clr-surface-2); }
+
+/* ── Settings ───────────────────────────────────────────────────────────────── */
+.settings-row {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         var(--sp-sm) 0;
+  border-bottom:   1px solid var(--clr-border);
+  margin-bottom:   var(--sp-md);
+}

@@ -1,0 +1,94 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   game.css — Player game dashboard (game.html)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Landing / Profile form ─────────────────────────────────────────────────── */
+.landing {
+  min-height:      100dvh;
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  padding:         var(--sp-lg);
+  text-align:      center;
+  gap:             var(--sp-lg);
+}
+
+.landing__hero { display: flex; flex-direction: column; align-items: center; gap: var(--sp-md); }
+.landing__logo { font-size: 72px; line-height: 1; }
+.landing__title {
+  font-size:   clamp(28px, 8vw, 48px);
+  background:  linear-gradient(135deg, var(--clr-primary-h), var(--clr-accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.landing__subtitle { color: var(--clr-text-muted); font-size: var(--font-sz-md); }
+
+/* ── Profile form ───────────────────────────────────────────────────────────── */
+.profile-form {
+  max-width: 480px;
+  margin:    0 auto;
+  padding:   var(--sp-lg);
+}
+.profile-form__title { margin-bottom: var(--sp-xs); }
+.profile-form__sub   { margin-bottom: var(--sp-lg); }
+.profile-form__error { color: var(--clr-error); font-size: var(--font-sz-sm); margin-top: var(--sp-sm); min-height: 1.2em; }
+
+/* ── Task cards ─────────────────────────────────────────────────────────────── */
+#task-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--sp-sm);
+  padding:        var(--sp-sm) 0;
+}
+
+.task-card {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--sp-md);
+  padding:       var(--sp-md);
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color:         var(--clr-text);
+  transition:    border-color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.task-card:hover  { border-color: var(--clr-primary); }
+.task-card--done  { opacity: 0.55; }
+.task-card--done:hover { border-color: var(--clr-border); }
+
+.task-card__icon {
+  font-size:     28px;
+  width:         48px;
+  height:        48px;
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  background:    var(--clr-surface-2);
+  border-radius: var(--radius-sm);
+  flex-shrink:   0;
+}
+.task-card__body   { flex: 1; min-width: 0; }
+.task-card__title  { font-size: var(--font-sz-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-card__type   { font-size: var(--font-sz-sm); color: var(--clr-text-muted); text-transform: capitalize; }
+.task-card__points { font-size: var(--font-sz-md); text-align: right; flex-shrink: 0; color: var(--clr-accent); }
+
+/* ── Section heading ────────────────────────────────────────────────────────── */
+.section-heading {
+  font-size:   var(--font-sz-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color:       var(--clr-text-muted);
+  padding:     var(--sp-md) 0 var(--sp-xs);
+}
+
+/* ── Player team tag ────────────────────────────────────────────────────────── */
+#player-team {
+  font-size:  var(--font-sz-sm);
+  color:      var(--clr-text-muted);
+  margin-top: 2px;
+}
