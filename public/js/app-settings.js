@@ -6,8 +6,8 @@
 
 export const APP_SETTINGS = {
   // ── Event Info ─────────────────────────────────────────────────────────────
-  gameName:  'Treasure Hunt Live',
-  eventDate: '2026-05-10',             // Display only
+  gameName:  'Treasure Hunt',
+  eventDate: '2026-05-13',             // Display only
 
   // ── Admin ──────────────────────────────────────────────────────────────────
   // Change this to a strong passcode before your event.

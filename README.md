@@ -394,3 +394,31 @@ https://crit-treasure-hunt-26.vercel.app/unlock.html?task=<task_id>
 https://crit-treasure-hunt-26.vercel.app/unlock.html?task=task-01-test01
 
 https://crit-treasure-hunt-26.vercel.app/unlock.html?task=task-01-test01
+
+
+## update 3:15pm 11/5/26
+
+Here's a summary of what was implemented:
+
+DB layer (6 files modified):
+
+game-state.js — added getActiveSessionId() helper
+leaderboard.js — fetchLeaderboard(sessionId) reads session_leaderboard view; onLeaderboardChange(sessionId, callback) listens to session_scores
+users.js — hasCompletedTask checks session_scores when sessionId provided; addScore passes p_session_id to RPC
+attempts.js — submitAttempt spreads the whole attempt object (picks up session_id); countWrongAttempts and claimFirstSolver both accept sessionId
+unlocked-tasks.js — all 4 functions accept sessionId = null
+announcements.js — sendAnnouncement includes session_id in insert
+Page files (3 modified):
+
+task-page.js — fetches sessionId after auth, threads through all 6 DB calls
+game-page.js — fetches sessionId, passes to unlock calls
+leaderboard-page.js — fetches sessionId, passes to listener
+Admin files (3 modified + 1 created):
+
+announcement-manager.js — fetches sessionId before sendAnnouncement
+session-manager.js — new panel (create/activate/list sessions)
+admin-page.js — added 🎮 Sessions tab wired to renderSessionManager
+Schema: MIGRATION v3 block appended to supabase-schema.sql for documentation. All SQL was already applied live to the DB in the previous session.
+
+
+
