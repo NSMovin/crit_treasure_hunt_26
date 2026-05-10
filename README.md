@@ -364,3 +364,33 @@ Use the **service_role** key (not anon key) for data export — find it in Proje
 ## License
 
 MIT — free for educational use.
+
+## update 11/5/26
+Here's a summary of what was implemented:
+
+Database (applied live to your Supabase project):
+
+tasks.is_public column added — controls whether a task shows without a QR scan
+unlocked_tasks table created with RLS, indexes, and realtime enabled
+unlock_task() SECURITY DEFINER RPC deployed — validates task is active, prevents duplicates, returns a status string
+New files:
+
+public/unlock.html — QR landing page
+public/js/pages/unlock-page.js — validates → unlocks → redirects to task
+public/js/db/unlocked-tasks.js — full DB layer for unlock operations
+Modified files:
+
+game-page.js — tasks split into visible (public/unlocked) and locked (dashed cards)
+task-page.js — unlock guard blocks direct URL access; admins bypass it
+task-manager.js — "Public task" checkbox in the task create/edit modal
+game.css — .task-card--locked style
+game.html — QR scanner now also follows /unlock.html URLs
+supabase-schema.sql — migration block appended for fresh deployments
+QR code format for printing:
+
+
+https://crit-treasure-hunt-26.vercel.app/unlock.html?task=<task_id>
+
+https://crit-treasure-hunt-26.vercel.app/unlock.html?task=task-01-test01
+
+https://crit-treasure-hunt-26.vercel.app/unlock.html?task=task-01-test01

@@ -188,3 +188,42 @@ ALTER PUBLICATION supabase_realtime ADD TABLE game_state;
 
 -- CREATE POLICY "photos_read" ON storage.objects
 --   FOR SELECT USING (bucket_id = 'photos');
+
+-- ── MIGRATION v2: QR-based task unlock system ─────────────────────────────────
+-- Already applied to live DB. Run this block if setting up a fresh project.
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS unlocked_tasks (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id     UUID NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+  task_id     TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+  unlocked_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, task_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_unlocked_tasks_user_id     ON unlocked_tasks (user_id);
+CREATE INDEX IF NOT EXISTS idx_unlocked_tasks_task_id     ON unlocked_tasks (task_id);
+CREATE INDEX IF NOT EXISTS idx_unlocked_tasks_unlocked_at ON unlocked_tasks (unlocked_at DESC);
+
+ALTER TABLE unlocked_tasks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "unlocked_tasks_read_own"   ON unlocked_tasks FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "unlocked_tasks_insert_own" ON unlocked_tasks FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+
+ALTER PUBLICATION supabase_realtime ADD TABLE unlocked_tasks;
+
+CREATE OR REPLACE FUNCTION unlock_task(p_user_id UUID, p_task_id TEXT)
+RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_active BOOLEAN;
+BEGIN
+  IF auth.uid() IS DISTINCT FROM p_user_id THEN RAISE EXCEPTION 'Unauthorized'; END IF;
+  SELECT active INTO v_active FROM tasks WHERE task_id = p_task_id;
+  IF NOT FOUND   THEN RETURN 'task_not_found'; END IF;
+  IF NOT v_active THEN RETURN 'task_not_active'; END IF;
+  BEGIN
+    INSERT INTO unlocked_tasks (user_id, task_id) VALUES (p_user_id, p_task_id);
+    RETURN 'unlocked';
+  EXCEPTION WHEN unique_violation THEN RETURN 'already_unlocked';
+  END;
+END;
+$$;

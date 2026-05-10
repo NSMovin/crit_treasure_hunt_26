@@ -55,6 +55,7 @@ function renderTaskRow(task) {
         <span class="badge ${task.active ? 'badge--success' : 'badge--muted'}">
           ${task.active ? 'Active' : 'Inactive'}
         </span>
+        ${task.is_public ? '<span class="badge" style="background:rgba(52,152,219,0.2);color:#3498db;">Public</span>' : ''}
       </div>
       <div class="task-row__actions">
         <button class="btn btn--sm btn--ghost btn-edit">Edit</button>
@@ -76,7 +77,7 @@ function openTaskModal(task, container) {
   const t      = task || {
     task_id: '', title: '', description: '', type: 'quiz',
     points: 100, time_limit_sec: 60, hint: '', active: false,
-    display_order: 99, config: {}
+    display_order: 99, config: {}, is_public: false
   };
 
   showModal(`
@@ -119,6 +120,12 @@ function openTaskModal(task, container) {
         <input class="input" type="number" id="m-order" value="${t.display_order || 99}" min="1" />
       </div>
       <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="m-is-public" ${t.is_public ? 'checked' : ''} />
+          Public task (visible to all players without scanning a QR code)
+        </label>
+      </div>
+      <div class="form-group">
         <label class="form-label">Hint (shown when released)</label>
         <input class="input" id="m-hint" value="${escapeHTML(t.hint || '')}" />
       </div>
@@ -147,8 +154,9 @@ function openTaskModal(task, container) {
     const points  = parseInt(document.getElementById('m-points').value, 10) || 100;
     const timeSec = parseInt(document.getElementById('m-time').value, 10) || 0;
     const order   = parseInt(document.getElementById('m-order').value, 10) || 99;
-    const hint    = document.getElementById('m-hint').value.trim();
-    const errorEl = document.getElementById('m-error');
+    const hint     = document.getElementById('m-hint').value.trim();
+    const isPublic = document.getElementById('m-is-public').checked;
+    const errorEl  = document.getElementById('m-error');
 
     let config = {};
     try {
@@ -177,7 +185,8 @@ function openTaskModal(task, container) {
         hint,
         hint_released:  t.hint_released || false,
         active:         isEdit ? t.active : false,
-        config
+        config,
+        is_public:      isPublic
       };
 
       if (isEdit) {

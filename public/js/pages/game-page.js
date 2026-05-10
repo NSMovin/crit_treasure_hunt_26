@@ -5,7 +5,10 @@
 
 import { touchLastActive }                from '/js/auth.js';
 import { requirePlayer }                  from '/js/router.js';
-import { onActiveTasksChange }            from '/js/db/tasks.js';
+import { onActiveTasksChange,
+         getActiveTasks }                 from '/js/db/tasks.js';
+import { getUserUnlockedTaskIds,
+         onUserUnlocksChange }            from '/js/db/unlocked-tasks.js';
 import { onUserChange }                   from '/js/db/users.js';
 import { onAnnouncementsChange }          from '/js/db/announcements.js';
 import { onGameStateChange }              from '/js/db/game-state.js';
@@ -51,8 +54,24 @@ function attachListeners(uid, profile) {
     })
   );
 
+  // Fetch unlock state first, then subscribe to active task changes
+  getUserUnlockedTaskIds(uid).then((ids) => {
+    _unlockedTaskIds = ids;
+    unsubs.push(
+      onActiveTasksChange((tasks) =>
+        renderTaskList(tasks, profile.tasks_completed || [], _unlockedTaskIds)
+      )
+    );
+  });
+
+  // Realtime: re-render task list when this user scans a new QR
   unsubs.push(
-    onActiveTasksChange((tasks) => renderTaskList(tasks, profile.tasks_completed || []))
+    onUserUnlocksChange(uid, (ids) => {
+      _unlockedTaskIds = ids;
+      getActiveTasks().then((tasks) =>
+        renderTaskList(tasks, _completedTasks, _unlockedTaskIds)
+      );
+    })
   );
 
   unsubs.push(
@@ -77,11 +96,13 @@ function attachListeners(uid, profile) {
 
 // ── Task list render ──────────────────────────────────────────────────────────
 
-let _completedTasks = [];
+let _completedTasks  = [];
+let _unlockedTaskIds = [];
 
-function renderTaskList(tasks, completedTasks) {
-  _completedTasks = completedTasks;
-  const container = document.getElementById('task-list');
+function renderTaskList(tasks, completedTasks, unlockedIds = []) {
+  _completedTasks  = completedTasks;
+  _unlockedTaskIds = unlockedIds;
+  const container  = document.getElementById('task-list');
 
   if (!tasks.length) {
     container.innerHTML = `
@@ -91,14 +112,16 @@ function renderTaskList(tasks, completedTasks) {
     return;
   }
 
-  container.innerHTML = tasks.map((task) => {
-    const done     = completedTasks.includes(task.task_id);
-    const typeIcon = taskIcon(task.type);
+  const visible = tasks.filter((t) => t.is_public || unlockedIds.includes(t.task_id));
+  const locked  = tasks.filter((t) => !t.is_public && !unlockedIds.includes(t.task_id));
+
+  const visibleHTML = visible.map((task) => {
+    const done = completedTasks.includes(task.task_id);
     return `
       <a class="task-card ${done ? 'task-card--done' : ''}"
          href="/task.html?id=${encodeURIComponent(task.task_id)}"
          ${done ? 'aria-label="Completed"' : ''}>
-        <div class="task-card__icon">${typeIcon}</div>
+        <div class="task-card__icon">${taskIcon(task.type)}</div>
         <div class="task-card__body">
           <h3 class="task-card__title">${escapeHTML(task.title)}</h3>
           <span class="task-card__type">${escapeHTML(task.type.replace('_', ' '))}</span>
@@ -108,6 +131,24 @@ function renderTaskList(tasks, completedTasks) {
         </div>
       </a>`;
   }).join('');
+
+  const lockedHTML = locked.map((task) => `
+    <div class="task-card task-card--locked" aria-label="Locked task">
+      <div class="task-card__icon">🔒</div>
+      <div class="task-card__body">
+        <h3 class="task-card__title">${escapeHTML(task.title)}</h3>
+        <span class="task-card__type">Find the QR code to unlock</span>
+      </div>
+      <div class="task-card__points" style="color:var(--clr-text-muted)">
+        <strong>+${task.points}</strong> pts
+      </div>
+    </div>`).join('');
+
+  container.innerHTML =
+    visibleHTML +
+    (locked.length
+      ? `<div class="section-heading" style="margin-top:var(--sp-md);">Locked Tasks</div>${lockedHTML}`
+      : '');
 }
 
 function renderCompletedMarkers(completedTasks) {

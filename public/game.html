@@ -103,7 +103,8 @@
           stopScan();
           try {
             const url = new URL(decodedText);
-            if (url.pathname.startsWith('/task.html')) {
+            if (url.pathname.startsWith('/task.html') ||
+                url.pathname.startsWith('/unlock.html')) {
               window.location.href = decodedText;
             }
           } catch {

@@ -51,6 +51,19 @@ const GAME_MODULE_MAP = {
     return;
   }
 
+  // Unlock guard: admins and public tasks bypass this check
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  if (!isAdmin && !task.is_public) {
+    const { isTaskUnlocked } = await import('/js/db/unlocked-tasks.js');
+    const unlocked = await isTaskUnlocked(uid, taskId);
+    if (!unlocked) {
+      hideSpinner();
+      showToast('Find the QR code to unlock this challenge.', 'warning');
+      setTimeout(() => window.location.replace('/game.html'), 1500);
+      return;
+    }
+  }
+
   const alreadyDone = await hasCompletedTask(uid, taskId);
   if (alreadyDone) {
     hideSpinner();

@@ -92,3 +92,11 @@
   color:      var(--clr-text-muted);
   margin-top: 2px;
 }
+
+/* ── Locked task card ───────────────────────────────────────────────────────── */
+.task-card--locked {
+  opacity:        0.55;
+  cursor:         not-allowed;
+  pointer-events: none;
+  border-style:   dashed;
+}
