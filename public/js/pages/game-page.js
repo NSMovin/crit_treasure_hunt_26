@@ -125,7 +125,7 @@ function renderTaskList(tasks, completedTasks, unlockedIds = []) {
   if (!tasks.length) {
     container.innerHTML = `
       <div class="empty-state">
-        <p>No tasks active yet. Watch for announcements!</p>
+        <p>No treasures active yet. Watch for announcements!</p>
       </div>`;
     return;
   }
@@ -165,7 +165,7 @@ function renderTaskList(tasks, completedTasks, unlockedIds = []) {
   container.innerHTML =
     visibleHTML +
     (locked.length
-      ? `<div class="section-heading" style="margin-top:var(--sp-md);">Locked Tasks</div>${lockedHTML}`
+      ? `<div class="section-heading" style="margin-top:var(--sp-md);">Locked Treasures</div>${lockedHTML}`
       : '');
 }
 
