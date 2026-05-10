@@ -34,14 +34,23 @@ async function fetchLeaderboard(sessionId = null) {
  * @returns {function} Unsubscribe function
  */
 export function onLeaderboardChange(sessionId, callback) {
-  const table   = sessionId ? 'session_scores' : 'users';
+  const table = sessionId ? 'session_scores' : 'users';
+
+  // Debounce: rapid consecutive DB events (e.g. many players finishing at once)
+  // collapse into a single re-fetch so the DOM isn't replaced on every event,
+  // which would stutter the live-dot CSS animation by blocking the main thread.
+  let timer = null;
+  const debouncedFetch = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fetchLeaderboard(sessionId).then(callback), 350);
+  };
+
   const channel = sb.channel('leaderboard-live')
-    .on('postgres_changes', { event: '*', schema: 'public', table },
-      () => fetchLeaderboard(sessionId).then(callback))
+    .on('postgres_changes', { event: '*', schema: 'public', table }, debouncedFetch)
     .subscribe();
 
-  fetchLeaderboard(sessionId).then(callback);
-  return () => sb.removeChannel(channel);
+  fetchLeaderboard(sessionId).then(callback); // immediate initial render
+  return () => { clearTimeout(timer); sb.removeChannel(channel); };
 }
 
 /**

@@ -64,14 +64,15 @@
 
 /* ── Live indicator ─────────────────────────────────────────────────────────── */
 .live-dot {
-  display:       inline-block;
-  width:         8px;
-  height:        8px;
-  border-radius: 50%;
-  background:    var(--clr-success);
-  animation:     pulse 1.5s ease-in-out infinite;
-  margin-right:  var(--sp-xs);
+  display:        inline-block;
+  width:          8px;
+  height:         8px;
+  border-radius:  50%;
+  background:     var(--clr-success);
+  animation:      pulse 1.5s ease-in-out infinite;
+  margin-right:   var(--sp-xs);
   vertical-align: middle;
+  will-change:    opacity;   /* own compositing layer — page repaints can't stutter it */
 }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
