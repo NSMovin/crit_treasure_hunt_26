@@ -365,3 +365,32 @@ BEGIN
   END;
 END;
 $$;
+
+-- ── MIGRATION v4: Admin player edit ───────────────────────────────────────────
+-- Already applied to live DB. Allows admin to update any player row, bypassing
+-- the users_update_own RLS policy. Also syncs score to active session if provided.
+
+CREATE OR REPLACE FUNCTION admin_update_user(
+  p_user_id    UUID,
+  p_full_name  TEXT,
+  p_student_id TEXT,
+  p_team_name  TEXT,
+  p_score      INTEGER,
+  p_session_id BIGINT DEFAULT NULL
+)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  UPDATE users
+  SET full_name  = p_full_name,
+      student_id = p_student_id,
+      team_name  = p_team_name,
+      score      = p_score
+  WHERE id = p_user_id;
+
+  IF p_session_id IS NOT NULL THEN
+    UPDATE session_scores
+    SET score = p_score
+    WHERE user_id = p_user_id AND session_id = p_session_id;
+  END IF;
+END;
+$$;
