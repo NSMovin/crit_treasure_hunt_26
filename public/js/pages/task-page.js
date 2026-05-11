@@ -20,7 +20,8 @@ const GAME_MODULE_MAP = {
   memory_match: '/js/games/memory-match.js',
   fast_tap:     '/js/games/fast-tap.js',
   puzzle:       '/js/games/puzzle.js',
-  photo:        '/js/games/photo-challenge.js'
+  photo:        '/js/games/photo-challenge.js',
+  arrow_hunt:   '/js/games/arrow-hunt.js'
 };
 
 (async function init() {

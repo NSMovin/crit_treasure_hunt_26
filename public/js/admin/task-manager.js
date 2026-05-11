@@ -70,7 +70,7 @@ function renderTaskRow(task) {
 
 // ── Task modal (create / edit) ────────────────────────────────────────────────
 
-const TASK_TYPES = ['quiz', 'memory_match', 'fast_tap', 'puzzle', 'photo'];
+const TASK_TYPES = ['quiz', 'memory_match', 'fast_tap', 'puzzle', 'photo', 'arrow_hunt'];
 
 function openTaskModal(task, container) {
   const isEdit = !!task;

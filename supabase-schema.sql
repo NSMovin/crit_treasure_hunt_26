@@ -642,3 +642,23 @@ BEGIN
   UPDATE game_state SET mafia_active = FALSE WHERE id = 1;
 END;
 $$;
+
+
+-- ============================================================
+-- MIGRATION v8: Add arrow_hunt task type
+-- ============================================================
+
+DO $$
+DECLARE v_conname text;
+BEGIN
+  SELECT c.conname INTO v_conname
+  FROM pg_constraint c JOIN pg_class t ON c.conrelid = t.oid
+  WHERE t.relname = 'tasks' AND c.contype = 'c'
+    AND pg_get_constraintdef(c.oid) LIKE '%type%';
+  IF v_conname IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE tasks DROP CONSTRAINT ' || quote_ident(v_conname);
+  END IF;
+END $$;
+
+ALTER TABLE tasks ADD CONSTRAINT tasks_type_check
+  CHECK (type IN ('quiz','memory_match','fast_tap','puzzle','photo','arrow_hunt'));
