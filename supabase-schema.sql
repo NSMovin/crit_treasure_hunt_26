@@ -480,3 +480,19 @@ BEGIN
   UPDATE game_state SET voting_open = false WHERE id = 1;
 END;
 $$;
+
+-- ── MIGRATION v6: Admin photo deletion ───────────────────────────────────────
+-- Already applied to live DB. Allows admin to delete photo submissions.
+
+-- Storage DELETE policy for the photos bucket
+CREATE POLICY "photos_delete" ON storage.objects
+  FOR DELETE USING (bucket_id = 'photos');
+
+-- SECURITY DEFINER function: nulls photo_url and removes associated votes
+CREATE OR REPLACE FUNCTION admin_delete_photo(p_attempt_id UUID)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  DELETE FROM photo_votes WHERE attempt_id = p_attempt_id;
+  UPDATE attempts SET photo_url = NULL WHERE id = p_attempt_id;
+END;
+$$;
