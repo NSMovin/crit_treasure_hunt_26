@@ -27,9 +27,6 @@ export function run(task, container, onComplete) {
   // ── Container setup ─────────────────────────────────────────────────────────
   container.style.position   = 'relative';
   container.style.overflow   = 'hidden';
-  container.style.minHeight  = '460px';
-  container.style.cursor     = 'crosshair';
-  container.style.userSelect = 'none';
 
   // ── DOM ─────────────────────────────────────────────────────────────────────
   container.innerHTML = `
@@ -112,12 +109,14 @@ export function run(task, container, onComplete) {
 
   // ── Sizing ──────────────────────────────────────────────────────────────────
   function resize() {
-    const cw   = container.clientWidth  || 360;
-    const ch   = container.clientHeight || 460;
-    const size = Math.min(cw, ch, 600);
+    const headerEl = document.getElementById('task-header');
+    const headerH  = headerEl ? headerEl.offsetHeight : 0;
+    const cw = window.innerWidth;
+    const ch = Math.max(window.innerHeight - headerH, 460);
     canvas.width  = cw;
     canvas.height = ch;
     W = cw; H = ch; CX = W / 2; CY = H / 2;
+    const size = Math.min(cw, ch, 600);
     LOG_R     = size * 0.22;
     ARROW_LEN = LOG_R * 1.1;
     ARROW_W   = 4;

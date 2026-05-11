@@ -162,12 +162,14 @@
 
 /* ── ARROW HUNT ─────────────────────────────────────────────────────────────── */
 .ah-wrap {
-  position: absolute; inset: 0;
+  position: relative;
+  width: 100%;
   background: #0d0a07;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
   overflow: hidden;
   font-family: 'Cinzel', serif;
+  cursor: crosshair;
+  user-select: none;
+  display: block;
 }
 .ah-bg-glow {
   position: absolute; inset: 0;
