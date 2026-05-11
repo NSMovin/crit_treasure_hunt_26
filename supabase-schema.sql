@@ -394,3 +394,89 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- ── MIGRATION v5: Community photo voting ──────────────────────────────────────
+-- Apply this block in Supabase SQL Editor for new deployments.
+
+CREATE TABLE IF NOT EXISTS photo_votes (
+  id             BIGSERIAL PRIMARY KEY,
+  voter_user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  attempt_id     UUID NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+  session_id     BIGINT REFERENCES game_sessions(id) ON DELETE CASCADE,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS photo_votes_voter_session_unique
+  ON photo_votes (voter_user_id, session_id);
+
+ALTER TABLE photo_votes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Players can insert own vote"
+  ON photo_votes FOR INSERT
+  WITH CHECK (auth.uid() = voter_user_id);
+
+CREATE POLICY "Anyone can read votes"
+  ON photo_votes FOR SELECT USING (true);
+
+ALTER TABLE game_state
+  ADD COLUMN IF NOT EXISTS voting_open BOOLEAN NOT NULL DEFAULT false;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE photo_votes;
+
+CREATE OR REPLACE FUNCTION award_vote_bonuses(p_session_id BIGINT)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_rec        RECORD;
+  v_rank       INT := 0;
+  v_prev_votes INT := -1;
+  v_bonus      INT;
+BEGIN
+  -- Participation bonus (+50) to every player who cast a vote
+  FOR v_rec IN
+    SELECT DISTINCT voter_user_id FROM photo_votes WHERE session_id = p_session_id
+  LOOP
+    UPDATE users SET score = score + 50 WHERE id = v_rec.voter_user_id;
+    INSERT INTO session_scores (user_id, session_id, score, tasks_completed)
+    VALUES (v_rec.voter_user_id, p_session_id, 50, ARRAY[]::TEXT[])
+    ON CONFLICT (user_id, session_id) DO UPDATE SET
+      score = session_scores.score + 50;
+  END LOOP;
+
+  -- Per-vote bonus (+10 per vote received) + podium for top 3
+  FOR v_rec IN
+    SELECT a.user_id,
+           COUNT(pv.id)::INT AS vote_count
+    FROM   photo_votes pv
+    JOIN   attempts     a ON a.id = pv.attempt_id
+    WHERE  pv.session_id = p_session_id
+    GROUP  BY a.user_id
+    ORDER  BY vote_count DESC
+  LOOP
+    -- Per-vote bonus
+    UPDATE users SET score = score + (v_rec.vote_count * 10) WHERE id = v_rec.user_id;
+    INSERT INTO session_scores (user_id, session_id, score, tasks_completed)
+    VALUES (v_rec.user_id, p_session_id, (v_rec.vote_count * 10), ARRAY[]::TEXT[])
+    ON CONFLICT (user_id, session_id) DO UPDATE SET
+      score = session_scores.score + (v_rec.vote_count * 10);
+
+    -- Rank (ties share same rank)
+    IF v_rec.vote_count <> v_prev_votes THEN
+      v_rank := v_rank + 1;
+    END IF;
+    v_prev_votes := v_rec.vote_count;
+
+    -- Podium bonus
+    v_bonus := CASE v_rank WHEN 1 THEN 100 WHEN 2 THEN 60 WHEN 3 THEN 30 ELSE 0 END;
+    IF v_bonus > 0 THEN
+      UPDATE users SET score = score + v_bonus WHERE id = v_rec.user_id;
+      INSERT INTO session_scores (user_id, session_id, score, tasks_completed)
+      VALUES (v_rec.user_id, p_session_id, v_bonus, ARRAY[]::TEXT[])
+      ON CONFLICT (user_id, session_id) DO UPDATE SET
+        score = session_scores.score + v_bonus;
+    END IF;
+  END LOOP;
+
+  -- Close voting
+  UPDATE game_state SET voting_open = false WHERE id = 1;
+END;
+$$;

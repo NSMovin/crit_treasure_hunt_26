@@ -29,6 +29,15 @@ export const APP_SETTINGS = {
     jpegQuality:  0.72                 // 0.0–1.0
   },
 
+  // ── Voting ─────────────────────────────────────────────────────────────────
+  voting: {
+    participationBonus: 50,            // Awarded to every player who casts a vote
+    perVoteBonus:       10,            // Per vote received by a submitted photo
+    podium1st:          100,           // Top vote-getter
+    podium2nd:          60,
+    podium3rd:          30
+  },
+
   // ── Leaderboard ────────────────────────────────────────────────────────────
   leaderboard: {
     displayLimit: 100                  // Max players shown

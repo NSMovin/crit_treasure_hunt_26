@@ -88,7 +88,7 @@ function renderDashboard() {
       </header>
 
       <nav class="admin-tabs" role="tablist">
-        ${['tasks','players','announcements','hints','settings','sessions'].map((tab, i) => `
+        ${['tasks','players','announcements','hints','settings','sessions','voting'].map((tab, i) => `
           <button class="admin-tab ${i === 0 ? 'admin-tab--active' : ''}"
                   data-panel="${tab}" role="tab">${tabLabel(tab)}</button>
         `).join('')}
@@ -135,6 +135,11 @@ async function loadPanel(name) {
       case 'hints':         await renderHintManager(content, _panelUnsubs);         break;
       case 'settings':      await renderSettings(content);                          break;
       case 'sessions':      await renderSessionManager(content, _panelUnsubs);      break;
+      case 'voting': {
+        const { renderVotingManager } = await import('/js/admin/voting-manager.js');
+        await renderVotingManager(content, _panelUnsubs);
+        break;
+      }
     }
   } catch (err) {
     console.error(`Panel "${name}" failed to load:`, err);
@@ -228,6 +233,7 @@ function tabLabel(tab) {
     announcements: '📢 Announcements',
     hints:         '💡 Hints',
     settings:      '⚙️ Settings',
-    sessions:      '🎮 Sessions'
+    sessions:      '🎮 Sessions',
+    voting:        '📸 Voting'
   }[tab] || tab;
 }

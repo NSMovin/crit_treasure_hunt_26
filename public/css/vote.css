@@ -1,0 +1,86 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   vote.css — Community photo voting gallery (vote.html)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Status banner ──────────────────────────────────────────────────────────── */
+.vote-status {
+  text-align:    center;
+  padding:       var(--sp-sm) var(--sp-md);
+  font-size:     var(--font-sz-sm);
+  font-weight:   600;
+  border-bottom: 1px solid var(--clr-border);
+}
+.vote-status--open   { color: var(--clr-success); background: rgba(46,204,113,0.08); }
+.vote-status--closed { color: var(--clr-text-muted); background: var(--clr-surface); }
+
+/* ── Gallery grid ───────────────────────────────────────────────────────────── */
+.photo-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap:                   var(--sp-sm);
+  padding:               var(--sp-sm);
+  padding-bottom:        calc(var(--sp-xl) * 2);
+}
+
+/* ── Photo card ─────────────────────────────────────────────────────────────── */
+.photo-card {
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  overflow:      hidden;
+  display:       flex;
+  flex-direction: column;
+  transition:    border-color 0.2s;
+}
+.photo-card--voted {
+  border-color: var(--clr-accent);
+}
+.photo-card--own {
+  opacity: 0.6;
+}
+
+.photo-card__img {
+  width:        100%;
+  aspect-ratio: 1;
+  object-fit:   cover;
+  display:      block;
+}
+.photo-card__img-placeholder {
+  width:        100%;
+  aspect-ratio: 1;
+  display:      flex;
+  align-items:  center;
+  justify-content: center;
+  font-size:    32px;
+  background:   var(--clr-surface-2);
+}
+
+.photo-card__author {
+  font-size:   var(--font-sz-sm);
+  color:       var(--clr-text-muted);
+  padding:     var(--sp-xs) var(--sp-sm) 0;
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+}
+
+.photo-card__count {
+  font-size:   var(--font-sz-sm);
+  font-weight: 700;
+  color:       var(--clr-accent);
+  padding:     2px var(--sp-sm);
+  text-align:  right;
+}
+
+.photo-card__vote-btn {
+  margin: var(--sp-xs) var(--sp-sm) var(--sp-sm);
+  width:  calc(100% - var(--sp-md));
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────────── */
+.vote-empty {
+  text-align:  center;
+  padding:     var(--sp-xl);
+  color:       var(--clr-text-muted);
+  font-size:   var(--font-sz-sm);
+}

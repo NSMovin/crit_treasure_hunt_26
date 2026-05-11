@@ -99,13 +99,15 @@ function attachListeners(uid, profile, sessionId) {
   unsubs.push(
     onGameStateChange((gs) => {
       if (!gs) return;
-      const banner = document.getElementById('game-status-banner');
+      const banner   = document.getElementById('game-status-banner');
+      const voteLink = document.getElementById('vote-nav-link');
       if (!gs.game_active) {
         banner.textContent   = '⏸ Game is currently paused. Stand by!';
         banner.style.display = 'block';
       } else {
         banner.style.display = 'none';
       }
+      if (voteLink) voteLink.style.display = gs.voting_open ? 'flex' : 'none';
     })
   );
 
