@@ -73,7 +73,8 @@ crit_treasure_hunt_26/
         │   ├── memory-match.js
         │   ├── fast-tap.js
         │   ├── puzzle.js
-        │   └── photo-challenge.js
+        │   ├── photo-challenge.js
+        │   └── arrow-hunt.js    # Rotating log — stick all arrows without overlap
         │
         ├── pages/               # Page-level controllers
         │   ├── index-page.js
@@ -288,6 +289,55 @@ Set the riddle in the task `description` field. Config:
 }
 ```
 
+### Arrow Hunt
+
+A canvas mini-game. A wooden log rotates on screen. Players tap/click to fire arrows into the log — arrows must not overlap. If two arrow tips land within the collision tolerance, the player is eliminated and can try again internally (wrong attempt is counted). When all arrows are placed without a collision, the task is marked correct.
+
+```json
+{
+  "target_rotation_speed": 1.8,
+  "arrow_count": 10,
+  "speed_increase_per_arrow": 0.18,
+  "collision_tolerance": 12,
+  "reverse_at_arrow": 5,
+  "scoring": {
+    "base_per_arrow": 10,
+    "bonus_at_5": 25,
+    "bonus_at_10": 75
+  }
+}
+```
+
+All fields are optional — omit the config entirely (`{}`) to use the defaults above.
+
+| Field | Default | Effect |
+|-------|---------|--------|
+| `target_rotation_speed` | `1.8` | Degrees per frame the log rotates at the start |
+| `arrow_count` | `10` | Number of arrows to place for a win |
+| `speed_increase_per_arrow` | `0.18` | Additional rotation speed added each time an arrow sticks |
+| `collision_tolerance` | `12` | Minimum degrees of separation required between arrows |
+| `reverse_at_arrow` | `5` | The log reverses rotation direction when this many arrows have been placed |
+| `scoring.base_per_arrow` | `10` | Points awarded each time an arrow sticks |
+| `scoring.bonus_at_5` | `25` | Bonus awarded when the 5th arrow sticks |
+| `scoring.bonus_at_10` | `75` | Bonus awarded when the 10th (final) arrow sticks |
+
+The in-game score is passed to the standard scoring formula via `onComplete`. The task reports `correct: true` only when all arrows are placed successfully.
+
+#### How to add an Arrow Hunt task (admin steps)
+
+1. Open **Admin → Tasks** → **+ New Task**
+2. Fill in **Title**, **Description** (shown to the player above the game), and **Points**
+3. Set **Type** to `arrow_hunt`
+4. In **Config JSON**, paste the block above — or leave it as `{}` for default difficulty
+5. Optionally set a **Time Limit** (seconds). If left blank there is no timer
+6. Set **Active = true** when you are ready for players to reach this task
+7. Print a QR code pointing to:
+   `https://your-project.vercel.app/unlock.html?task=<task_id>`
+
+Players scan the QR code → the task unlocks → they are taken to the game. Completion is recorded in the attempts table and points are added to the leaderboard automatically.
+
+To increase difficulty: raise `target_rotation_speed`, lower `collision_tolerance`, or increase `arrow_count`. To make it easier: lower speed, raise tolerance, or reduce arrow count.
+
 ---
 
 ## Scoring Formula
@@ -341,7 +391,7 @@ Configurable in `public/js/app-settings.js → voting`. Ties share the same podi
 | task_id | TEXT PK | Human-readable slug |
 | title | TEXT | |
 | description | TEXT | Riddle text / instructions |
-| type | TEXT | quiz / memory_match / fast_tap / puzzle / photo |
+| type | TEXT | quiz / memory_match / fast_tap / puzzle / photo / arrow_hunt |
 | points | INTEGER | Base points |
 | time_limit_sec | INTEGER | NULL = no timer |
 | hint | TEXT | Empty until released |
@@ -699,6 +749,33 @@ Database changes (applied live):
 - `get_mafia_feed(session_id, limit)` — SECURITY DEFINER; returns anonymised event strings without player identities
 - `admin_get_mafia_state(session_id)` — returns full role table for admin panel only
 - `admin_reset_mafia(session_id)` — deletes all roles and actions for the session, sets `mafia_active = false`
+
+---
+
+## update 11/5/26 — Arrow Hunt mini-game
+
+New files:
+
+- `public/js/games/arrow-hunt.js` — self-contained mini-game module: rotating log canvas game, container-scoped DOM, named event listener cleanup, `export function run(task, container, onComplete)` interface
+
+Modified files:
+
+- `public/css/task.css` — Arrow Hunt styles appended with `.ah-*` namespace; all `position:fixed` replaced with `position:absolute` so the game renders inside the task container
+- `public/js/pages/task-page.js` — `arrow_hunt: '/js/games/arrow-hunt.js'` added to `GAME_MODULE_MAP`
+- `public/js/admin/task-manager.js` — `'arrow_hunt'` added to `TASK_TYPES` (shows in the type dropdown when creating/editing tasks)
+- `supabase-schema.sql` — MIGRATION v8 block appended
+
+Database changes (applied live):
+
+- `tasks` CHECK constraint on `type` column dropped and recreated to include `'arrow_hunt'`
+
+Game behaviour:
+
+- Player taps/clicks to fire arrows into a rotating log; arrows must not overlap
+- Collision (arrow tips within `collision_tolerance` degrees) → wrong attempt counted, player retries internally without leaving the task page
+- All arrows placed without collision → `onComplete({ correct: true, timeTakenSec, wrongAttempts, score })` — standard scoring formula applies
+- `startTime` is set once when the game begins and is never reset on internal retries, so `timeTakenSec` covers the full attempt including any retries
+- Full cleanup on exit: `cancelAnimationFrame`, event listener removal, score popup DOM cleanup
 
 ---
 
