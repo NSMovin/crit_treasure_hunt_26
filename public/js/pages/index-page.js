@@ -42,7 +42,7 @@ function renderLanding(validTeams) {
       <div class="landing__hero">
         <div class="landing__logo">🗺️</div>
         <h1 class="landing__title">${escapeHTML(APP_SETTINGS.gameName)}</h1>
-        <p class="landing__subtitle">Green University Departmental Tour 2026</p>
+        <p class="landing__subtitle">Green University of Bangladesh ADS Departmental Tour 2026</p>
       </div>
       <button class="btn btn--primary btn--lg" id="btn-start">
         Join the Hunt
