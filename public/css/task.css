@@ -62,6 +62,26 @@
 .quiz__options     { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-sm); }
 .quiz__attempts    { text-align: center; color: var(--clr-warning); font-size: var(--font-sz-sm); margin-top: var(--sp-sm); }
 
+/* Multi-question progress indicator (hidden for single-question tasks) */
+.quiz__progress {
+  font-size:     var(--font-sz-sm);
+  color:         var(--clr-text-muted);
+  text-align:    center;
+  margin-bottom: var(--sp-xs);
+}
+.quiz__progress-bar {
+  height:        4px;
+  background:    rgba(255,255,255,0.08);
+  border-radius: 2px;
+  overflow:      hidden;
+  margin-bottom: var(--sp-md);
+}
+.quiz__progress-fill {
+  height:     100%;
+  background: var(--clr-accent);
+  transition: width 0.35s ease;
+}
+
 /* ── MEMORY MATCH ───────────────────────────────────────────────────────────── */
 .memory__timer     { text-align: right; font-size: var(--font-sz-sm); color: var(--clr-text-muted); margin-bottom: var(--sp-sm); }
 .memory__grid {

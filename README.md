@@ -187,7 +187,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE game_state;
 
 ## Task Config JSON Reference
 
-### Quiz
+### Quiz — Single Question (legacy format)
 
 ```json
 {
@@ -196,6 +196,35 @@ ALTER PUBLICATION supabase_realtime ADD TABLE game_state;
   "correct_index": 1
 }
 ```
+
+### Quiz — Multiple Questions (new format)
+
+Use the `questions` array to chain questions sequentially inside a single task. The player moves through each question one by one — no page reload. The wrong-attempt counter (`MAX_WRONG = 3`) resets per question. The timer (if set) covers the whole quiz, not each question individually.
+
+```json
+{
+  "questions": [
+    {
+      "question": "What does AI stand for?",
+      "options": ["Artificial Intelligence", "Automated Internet", "Advanced Interface", "Algorithmic Input"],
+      "correct_index": 0
+    },
+    {
+      "question": "Which programming language is most used in AI?",
+      "options": ["Python", "PHP", "HTML", "Swift"],
+      "correct_index": 0
+    },
+    {
+      "question": "What year was this university founded?",
+      "options": ["1990", "1998", "2002", "2010"],
+      "correct_index": 1
+    }
+  ]
+}
+```
+
+`correct_index` is zero-based (`0` = first option, `1` = second, etc.).  
+Scoring: `correct = true` if the player answered at least one question correctly. Total wrong attempts across all questions feed into the penalty formula.
 
 ### Memory Match
 
