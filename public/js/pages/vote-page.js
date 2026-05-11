@@ -3,7 +3,7 @@
 // Community photo voting gallery.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { requirePlayer }                        from '/js/auth.js';
+import { requirePlayer }                        from '/js/router.js';
 import { getActiveSessionId, onGameStateChange } from '/js/db/game-state.js';
 import { getPhotoSubmissions, getMyVote,
          castVote, onPhotoVotesChange }          from '/js/db/photo-votes.js';
