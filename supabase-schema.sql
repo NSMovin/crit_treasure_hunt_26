@@ -496,3 +496,149 @@ BEGIN
   UPDATE attempts SET photo_url = NULL WHERE id = p_attempt_id;
 END;
 $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MIGRATION v7: Mafia Hunt Side-Game
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- 1. game_state: add mafia toggle
+ALTER TABLE game_state ADD COLUMN IF NOT EXISTS mafia_active BOOLEAN DEFAULT FALSE;
+
+-- 2. mafia_roles: one row per player per session
+CREATE TABLE IF NOT EXISTS mafia_roles (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id     UUID    NOT NULL REFERENCES users(id),
+  session_id  BIGINT  NOT NULL REFERENCES game_sessions(id),
+  role        TEXT    NOT NULL CHECK (role IN ('spy','civilian')),
+  is_alive    BOOLEAN DEFAULT TRUE,
+  kills       INTEGER DEFAULT 0,
+  assigned_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT mafia_roles_unique UNIQUE (user_id, session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mafia_roles_session ON mafia_roles (session_id);
+ALTER TABLE mafia_roles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "mafia_roles_read_own" ON mafia_roles
+  FOR SELECT USING (auth.uid() = user_id);
+
+-- 3. mafia_actions: audit trail of every attack
+CREATE TABLE IF NOT EXISTS mafia_actions (
+  id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  attacker_user_id UUID   NOT NULL REFERENCES users(id),
+  target_user_id   UUID   NOT NULL REFERENCES users(id),
+  session_id       BIGINT NOT NULL REFERENCES game_sessions(id),
+  success          BOOLEAN NOT NULL,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_mafia_actions_session  ON mafia_actions (session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mafia_actions_attacker ON mafia_actions (attacker_user_id, session_id);
+ALTER TABLE mafia_actions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "mafia_actions_read_own" ON mafia_actions
+  FOR SELECT USING (auth.uid() = attacker_user_id);
+
+-- 4. start_mafia: randomly assign roles (20% spy, 80% civilian)
+CREATE OR REPLACE FUNCTION start_mafia(p_session_id BIGINT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_ids       UUID[];
+  v_count     INTEGER;
+  v_spy_count INTEGER;
+  v_i         INTEGER;
+BEGIN
+  SELECT ARRAY_AGG(uid ORDER BY RANDOM())
+  INTO v_ids
+  FROM (SELECT DISTINCT user_id AS uid FROM session_scores WHERE session_id = p_session_id) t;
+  IF v_ids IS NULL THEN RAISE EXCEPTION 'No players found for session %.', p_session_id; END IF;
+  v_count     := array_length(v_ids, 1);
+  v_spy_count := GREATEST(1, ROUND(v_count * 0.20)::INTEGER);
+  FOR v_i IN 1..v_count LOOP
+    INSERT INTO mafia_roles (user_id, session_id, role)
+    VALUES (v_ids[v_i], p_session_id, CASE WHEN v_i <= v_spy_count THEN 'spy' ELSE 'civilian' END)
+    ON CONFLICT (user_id, session_id) DO NOTHING;
+  END LOOP;
+  UPDATE game_state SET mafia_active = TRUE WHERE id = 1;
+END;
+$$;
+
+-- 5. mafia_attack: resolve an attack (server-enforces all rules)
+CREATE OR REPLACE FUNCTION mafia_attack(p_target_student_id TEXT, p_session_id BIGINT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_attacker_id  UUID := auth.uid();
+  v_target       RECORD; v_atk_role RECORD; v_tgt_role RECORD;
+  v_last_attack  TIMESTAMPTZ;
+  v_success      BOOLEAN; v_points_delta INTEGER; v_outcome TEXT;
+BEGIN
+  SELECT * INTO v_atk_role FROM mafia_roles WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  IF NOT FOUND               THEN RAISE EXCEPTION 'You are not enrolled in Mafia Hunt.'; END IF;
+  IF NOT v_atk_role.is_alive THEN RAISE EXCEPTION 'Dead players cannot attack.'; END IF;
+  SELECT MAX(created_at) INTO v_last_attack FROM mafia_actions
+  WHERE attacker_user_id = v_attacker_id AND session_id = p_session_id;
+  IF v_last_attack IS NOT NULL AND v_last_attack > NOW() - INTERVAL '15 minutes' THEN
+    RAISE EXCEPTION 'Cooldown active. Wait % more seconds.',
+      EXTRACT(EPOCH FROM (v_last_attack + INTERVAL '15 minutes' - NOW()))::INTEGER;
+  END IF;
+  SELECT * INTO v_target FROM users WHERE student_id = p_target_student_id;
+  IF NOT FOUND               THEN RAISE EXCEPTION 'No player found with that student ID.'; END IF;
+  IF v_target.id = v_attacker_id THEN RAISE EXCEPTION 'You cannot target yourself.'; END IF;
+  SELECT * INTO v_tgt_role FROM mafia_roles WHERE user_id = v_target.id AND session_id = p_session_id;
+  IF NOT FOUND               THEN RAISE EXCEPTION 'That player is not enrolled in Mafia Hunt.'; END IF;
+  IF NOT v_tgt_role.is_alive THEN RAISE EXCEPTION 'That player is already eliminated.'; END IF;
+  IF v_atk_role.role = 'spy' AND v_tgt_role.role = 'civilian' THEN
+    v_success := TRUE;  v_points_delta := 100;  v_outcome := 'eliminated_civilian';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_target.id      AND session_id = p_session_id;
+    UPDATE mafia_roles SET kills = kills + 1   WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  ELSIF v_atk_role.role = 'spy' AND v_tgt_role.role = 'spy' THEN
+    v_success := FALSE; v_points_delta := -75;  v_outcome := 'spy_mistake';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  ELSIF v_atk_role.role = 'civilian' AND v_tgt_role.role = 'spy' THEN
+    v_success := TRUE;  v_points_delta := 100;  v_outcome := 'exposed_spy';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_target.id      AND session_id = p_session_id;
+    UPDATE mafia_roles SET kills = kills + 1   WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  ELSE
+    v_success := FALSE; v_points_delta := -75;  v_outcome := 'civilian_mistake';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_target.id AND session_id = p_session_id;
+  END IF;
+  UPDATE users          SET score = score + v_points_delta, last_active = NOW() WHERE id = v_attacker_id;
+  UPDATE session_scores SET score = score + v_points_delta
+  WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  INSERT INTO mafia_actions (attacker_user_id, target_user_id, session_id, success)
+  VALUES (v_attacker_id, v_target.id, p_session_id, v_success);
+  RETURN jsonb_build_object('outcome', v_outcome, 'success', v_success, 'points_delta', v_points_delta);
+END;
+$$;
+
+-- 6. get_mafia_feed: anonymised event feed (SECURITY DEFINER bypasses RLS)
+CREATE OR REPLACE FUNCTION get_mafia_feed(p_session_id BIGINT, p_limit INTEGER DEFAULT 10)
+RETURNS TABLE (event_text TEXT, created_at TIMESTAMPTZ) LANGUAGE sql SECURITY DEFINER AS $$
+  SELECT
+    CASE
+      WHEN ma.success AND mr_t.role = 'civilian' THEN '⚠️ A civilian was eliminated.'
+      WHEN ma.success AND mr_t.role = 'spy'      THEN '⚠️ A spy was exposed.'
+      ELSE '⚠️ Someone made a fatal mistake.'
+    END,
+    ma.created_at
+  FROM mafia_actions ma
+  LEFT JOIN mafia_roles mr_t ON ma.target_user_id = mr_t.user_id AND ma.session_id = mr_t.session_id
+  WHERE ma.session_id = p_session_id
+  ORDER BY ma.created_at DESC LIMIT p_limit;
+$$;
+
+-- 7. admin_get_mafia_state: full role table for admin panel only
+CREATE OR REPLACE FUNCTION admin_get_mafia_state(p_session_id BIGINT)
+RETURNS TABLE (user_id UUID, full_name TEXT, role TEXT, is_alive BOOLEAN, kills INTEGER)
+LANGUAGE sql SECURITY DEFINER AS $$
+  SELECT mr.user_id, u.full_name, mr.role, mr.is_alive, mr.kills
+  FROM mafia_roles mr JOIN users u ON mr.user_id = u.id
+  WHERE mr.session_id = p_session_id
+  ORDER BY mr.role, mr.is_alive DESC, mr.kills DESC;
+$$;
+
+-- 8. admin_reset_mafia: wipe session roles + actions, deactivate
+CREATE OR REPLACE FUNCTION admin_reset_mafia(p_session_id BIGINT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  DELETE FROM mafia_actions WHERE session_id = p_session_id;
+  DELETE FROM mafia_roles    WHERE session_id = p_session_id;
+  UPDATE game_state SET mafia_active = FALSE WHERE id = 1;
+END;
+$$;

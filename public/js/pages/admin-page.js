@@ -88,7 +88,7 @@ function renderDashboard() {
       </header>
 
       <nav class="admin-tabs" role="tablist">
-        ${['tasks','players','announcements','hints','settings','sessions','voting'].map((tab, i) => `
+        ${['tasks','players','announcements','hints','settings','sessions','voting','mafia'].map((tab, i) => `
           <button class="admin-tab ${i === 0 ? 'admin-tab--active' : ''}"
                   data-panel="${tab}" role="tab">${tabLabel(tab)}</button>
         `).join('')}
@@ -138,6 +138,11 @@ async function loadPanel(name) {
       case 'voting': {
         const { renderVotingManager } = await import('/js/admin/voting-manager.js');
         await renderVotingManager(content, _panelUnsubs);
+        break;
+      }
+      case 'mafia': {
+        const { renderMafiaManager } = await import('/js/admin/mafia-manager.js');
+        await renderMafiaManager(content, _panelUnsubs);
         break;
       }
     }
@@ -234,6 +239,7 @@ function tabLabel(tab) {
     hints:         '💡 Hints',
     settings:      '⚙️ Settings',
     sessions:      '🎮 Sessions',
-    voting:        '📸 Voting'
+    voting:        '📸 Voting',
+    mafia:         '🕵️ Mafia Hunt'
   }[tab] || tab;
 }

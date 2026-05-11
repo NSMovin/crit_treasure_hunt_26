@@ -108,6 +108,8 @@ function attachListeners(uid, profile, sessionId) {
         banner.style.display = 'none';
       }
       if (voteLink) voteLink.style.display = gs.voting_open ? 'flex' : 'none';
+      const mafiaLink = document.getElementById('mafia-nav-link');
+      if (mafiaLink) mafiaLink.style.display = gs.mafia_active ? 'flex' : 'none';
     })
   );
 

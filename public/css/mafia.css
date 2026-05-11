@@ -1,0 +1,156 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   mafia.css — Mafia Hunt side-game page (mafia.html)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Page wrapper ───────────────────────────────────────────────────────────── */
+.mafia-page {
+  padding:    var(--sp-md);
+  max-width:  480px;
+  margin:     0 auto;
+}
+
+/* ── Role card ──────────────────────────────────────────────────────────────── */
+.mafia__role-card {
+  background:    var(--clr-surface);
+  border:        2px solid var(--clr-accent);
+  border-radius: var(--radius-md);
+  padding:       var(--sp-md);
+  margin-bottom: var(--sp-md);
+  transition:    border-color 0.2s, opacity 0.2s;
+}
+.mafia__role-card.mafia__role--dead {
+  border-color: var(--clr-text-muted);
+  opacity:      0.5;
+}
+
+.mafia__role-title {
+  font-size:   var(--font-sz-sm);
+  color:       var(--clr-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--sp-xs);
+}
+
+.mafia__role-name {
+  font-size:   1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.mafia__role-status {
+  margin-top: var(--sp-xs);
+  font-size:  var(--font-sz-sm);
+}
+
+.mafia__kills {
+  margin-top: var(--sp-xs);
+  font-size:  var(--font-sz-sm);
+  color:      var(--clr-text-muted);
+}
+
+/* ── Attack section ─────────────────────────────────────────────────────────── */
+.mafia__attack-section {
+  margin-top: var(--sp-lg);
+}
+
+.mafia__attack-section h3 {
+  margin-bottom: var(--sp-sm);
+}
+
+.mafia__objective {
+  font-style: italic;
+  color:      var(--clr-text-muted);
+  font-size:  var(--font-sz-sm);
+  margin-bottom: var(--sp-sm);
+}
+
+.mafia__cooldown {
+  min-height:  1.4em;
+  font-size:   var(--font-sz-sm);
+  font-family: monospace;
+  color:       var(--clr-warning, #e67e22);
+  margin-bottom: var(--sp-xs);
+}
+
+.mafia__attack-form {
+  display: flex;
+  gap:     var(--sp-sm);
+  align-items: center;
+}
+
+.mafia__attack-form .input {
+  flex: 1;
+}
+
+.mafia__result {
+  min-height:  1.4em;
+  font-weight: 600;
+  margin-top:  var(--sp-sm);
+  font-size:   var(--font-sz-sm);
+}
+.mafia__result--success { color: var(--clr-success); }
+.mafia__result--failure { color: var(--clr-error); }
+
+/* ── Dead notice ────────────────────────────────────────────────────────────── */
+.mafia__dead-notice {
+  margin-top:    var(--sp-md);
+  padding:       var(--sp-md);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  text-align:    center;
+  color:         var(--clr-text-muted);
+  font-size:     var(--font-sz-sm);
+}
+
+.mafia__dead-notice p + p {
+  margin-top: var(--sp-xs);
+}
+
+/* ── Event feed ─────────────────────────────────────────────────────────────── */
+.mafia__feed {
+  margin-top: var(--sp-lg);
+}
+
+.mafia__feed h3 {
+  margin-bottom: var(--sp-sm);
+}
+
+.mafia__feed-item {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  padding:         var(--sp-xs) 0;
+  border-bottom:   1px solid var(--clr-border);
+  font-size:       var(--font-sz-sm);
+}
+
+.mafia__feed-time {
+  color:     var(--clr-text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-left: var(--sp-sm);
+}
+
+.mafia__feed-empty {
+  text-align: center;
+  padding:    var(--sp-md);
+  color:      var(--clr-text-muted);
+  font-size:  var(--font-sz-sm);
+}
+
+/* ── Inactive state ─────────────────────────────────────────────────────────── */
+.mafia__inactive {
+  text-align: center;
+  padding:    var(--sp-xl);
+  color:      var(--clr-text-muted);
+}
+
+.mafia__icon {
+  font-size:     3rem;
+  margin-bottom: var(--sp-sm);
+}
+
+.mafia__inactive h2 {
+  color:         var(--clr-text);
+  margin-bottom: var(--sp-sm);
+}

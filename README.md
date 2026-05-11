@@ -32,6 +32,7 @@ crit_treasure_hunt_26/
     ├── unlock.html              # QR landing page → unlocks task
     ├── leaderboard.html         # Real-time leaderboard (public)
     ├── vote.html                # Community photo voting gallery
+    ├── mafia.html               # Mafia Hunt side-game player page
     ├── admin.html               # Admin dashboard (passcode-gated)
     │
     ├── css/
@@ -42,6 +43,7 @@ crit_treasure_hunt_26/
     │   ├── task.css             # Task runner + all mini-games
     │   ├── leaderboard.css      # Leaderboard styles
     │   ├── vote.css             # Photo voting gallery styles
+    │   ├── mafia.css            # Mafia Hunt side-game styles
     │   └── admin.css            # Admin dashboard styles
     │
     └── js/
@@ -63,7 +65,8 @@ crit_treasure_hunt_26/
         │   ├── game-state.js
         │   ├── game-sessions.js
         │   ├── unlocked-tasks.js
-        │   └── photo-votes.js
+        │   ├── photo-votes.js
+        │   └── mafia.js
         │
         ├── games/               # Mini-game implementations
         │   ├── quiz.js
@@ -79,6 +82,7 @@ crit_treasure_hunt_26/
         │   ├── unlock-page.js
         │   ├── leaderboard-page.js
         │   ├── vote-page.js
+        │   ├── mafia-page.js
         │   └── admin-page.js
         │
         └── admin/               # Admin panel sub-modules
@@ -87,7 +91,8 @@ crit_treasure_hunt_26/
             ├── player-monitor.js
             ├── hint-manager.js
             ├── session-manager.js
-            └── voting-manager.js
+            ├── voting-manager.js
+            └── mafia-manager.js
 ```
 
 ---
@@ -380,6 +385,7 @@ Configurable in `public/js/app-settings.js → voting`. Ties share the same podi
 | ends_at | TIMESTAMPTZ |
 | active_session_id | BIGINT | FK → game_sessions.id |
 | voting_open | BOOLEAN | Controls photo voting gallery |
+| mafia_active | BOOLEAN | Controls Mafia Hunt side-game |
 
 ### `photo_votes`
 | Column | Type | Notes |
@@ -391,6 +397,31 @@ Configurable in `public/js/app-settings.js → voting`. Ties share the same podi
 | created_at | TIMESTAMPTZ | |
 
 UNIQUE constraint on `(voter_user_id, session_id)` — one vote per player per session.
+
+### `mafia_roles`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT | Auto-generated |
+| user_id | UUID | References users.id |
+| session_id | BIGINT | References game_sessions.id |
+| role | TEXT | `spy` or `civilian` |
+| is_alive | BOOLEAN | False once eliminated |
+| kills | INTEGER | Successful eliminations |
+| assigned_at | TIMESTAMPTZ | |
+
+UNIQUE constraint on `(user_id, session_id)`. RLS: each player can only read their own row — other roles are never exposed to players.
+
+### `mafia_actions`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT | Auto-generated |
+| attacker_user_id | UUID | Who attacked |
+| target_user_id | UUID | Who was targeted |
+| session_id | BIGINT | References game_sessions.id |
+| success | BOOLEAN | True if attacker achieved their goal |
+| created_at | TIMESTAMPTZ | Used for 15-minute cooldown enforcement |
+
+RLS: players can only read their own attack rows (used for cooldown display). The anonymous event feed is served via a SECURITY DEFINER RPC that strips identities.
 
 ---
 
@@ -413,6 +444,111 @@ UNIQUE constraint on `(voter_user_id, session_id)` — one vote per player per s
 ```
 https://crit-treasure-hunt-26.vercel.app/unlock.html?task=<task_id>
 ```
+
+---
+
+## Mafia Hunt Side-Game
+
+Mafia Hunt is a hidden-role social deduction game that runs **in parallel** with the treasure hunt. Players keep doing tasks, scanning QR codes, and competing on the leaderboard — while secretly trying to figure out who is a spy and who is a civilian. The two games share the same score, so a successful elimination puts you ahead on the leaderboard; a wrong accusation drops you.
+
+### Concept
+
+When the admin starts Mafia Hunt, every player is secretly assigned one of two roles:
+
+| Role | Proportion | Objective |
+|------|-----------|-----------|
+| 🕵️ **Spy** | ~20% of players | Blend in. Eliminate civilians without being caught. |
+| 👤 **Civilian** | ~80% of players | Find the spies. Accuse and expose them. |
+
+Players **do not know each other's roles**. The only way to find out is to talk, observe behaviour during the treasure hunt, and take a calculated guess. Roles are stored in the database — the frontend never sends role data to players other than their own.
+
+### How a Round Works
+
+1. The admin opens `/admin.html → 🕵️ Mafia Hunt` and clicks **Start Mafia Mode**
+2. Roles are assigned randomly to everyone who has played at least one task in the active session
+3. A `🕵️ Mafia` link appears in every player's bottom navigation bar
+4. Players open `/mafia.html` to see their secret role, alive status, and kill count
+5. To make a move, a player enters another player's **student ID** and hits ⚔️ Attack
+6. The server resolves the attack instantly and returns the result
+7. Players must wait **15 minutes** before attacking again
+8. The game ends when the admin clicks **End Mafia Mode**
+
+### Attack Outcomes
+
+The result depends on the roles of both attacker and target:
+
+| Attacker | Target | Result | Points |
+|----------|--------|--------|--------|
+| 🕵️ Spy | 👤 Civilian | Civilian is eliminated. Spy survives. | Spy **+100** |
+| 🕵️ Spy | 🕵️ Spy | Attacker Spy is exposed and eliminated. | Attacker **−75** |
+| 👤 Civilian | 🕵️ Spy | Spy is exposed and eliminated. Civilian survives. | Civilian **+100** |
+| 👤 Civilian | 👤 Civilian | Target Civilian is eliminated. Attacker loses points. | Attacker **−75** |
+
+Spies win by eliminating civilians. Civilians win by identifying and exposing all spies. The game does not enforce a formal win condition — it ends when the admin decides, and the leaderboard reflects the cumulative effect.
+
+### What Dead Players Can and Cannot Do
+
+Elimination from Mafia Hunt is **not** elimination from the event.
+
+| Action | Alive player | Eliminated player |
+|--------|-------------|------------------|
+| Continue treasure hunt tasks | ✅ | ✅ |
+| Earn points from task completion | ✅ | ✅ |
+| Appear on leaderboard | ✅ | ✅ |
+| Make Mafia attacks | ✅ | ❌ |
+| Be targeted by other players | ✅ | ❌ (server rejects) |
+
+Dead players keep all their treasure hunt points. They just can't attack or be attacked in Mafia Hunt anymore.
+
+### Scoring Integration
+
+Mafia Hunt points are added directly to the same `users.score` and `session_scores.score` columns used by the treasure hunt. There is no separate leaderboard — a well-played Mafia Hunt gives a competitive edge on the main board.
+
+| Event | Points |
+|-------|--------|
+| Successful elimination (correct target) | +100 |
+| Wrong accusation (incorrect target) | −75 |
+
+### The 15-Minute Cooldown
+
+Every player has exactly one attack per 15 minutes. The countdown is displayed on `/mafia.html` and updates every second. The limit is enforced server-side — the `mafia_attack` RPC checks `MAX(created_at)` from `mafia_actions` and raises an exception if the cooldown has not elapsed. Frontend enforcement alone is not sufficient because the RPC can be called directly.
+
+### Anonymous Event Feed
+
+A public activity feed on `/mafia.html` shows events as they happen, without revealing who did what:
+
+```
+⚠️ A civilian was eliminated.
+⚠️ A spy was exposed.
+⚠️ Someone made a fatal mistake.
+```
+
+This creates tension and keeps all players engaged even if they haven't attacked yet. The feed is served by the `get_mafia_feed` SECURITY DEFINER RPC, which joins role data internally and returns only the anonymised message string — no names, no IDs.
+
+### Role Secrecy
+
+The `mafia_roles` table has a strict RLS policy: each authenticated user can only `SELECT` their own row. The database never returns another player's role to any client. The admin panel uses a separate `admin_get_mafia_state` SECURITY DEFINER RPC (callable by any authenticated user, but only surfaced in the passcode-gated admin page) to display the full role table.
+
+### Admin Controls — Admin → 🕵️ Mafia Hunt
+
+| Button | What It Does |
+|--------|-------------|
+| **Start Mafia Mode** | Randomly assigns roles (20% spy / 80% civilian) to all session players; sets `mafia_active = true`; shows Mafia nav link to all players. Disabled if no active session. |
+| **End Mafia Mode** | Sets `mafia_active = false`; hides Mafia nav link. Roles and actions are preserved in the database for post-event analysis. |
+| **Reset** | Deletes all `mafia_roles` and `mafia_actions` rows for the session; sets `mafia_active = false`. Use this to start a fresh round. |
+
+The admin panel also shows a live table of all players' roles, alive status, and kill counts — visible only to the admin.
+
+### Security
+
+All game rules are enforced inside the `mafia_attack` SECURITY DEFINER RPC on the PostgreSQL server. The frontend cannot bypass any check:
+
+- **Alive check** — dead players' calls are rejected before any other logic runs
+- **Cooldown** — uses `MAX(created_at)` from `mafia_actions`; wall-clock time, not a client timestamp
+- **Self-target** — rejected if `target.id = auth.uid()`
+- **Enrollment** — both attacker and target must have a role row in the current session
+- **Double-kill** — rejected if target's `is_alive` is already `false`
+- **Scoring** — uses direct `UPDATE` on `users` and `session_scores` (the `add_score` RPC has an `auth.uid()` guard that prevents awarding points to other users, so direct SQL is required — the same approach used by `award_vote_bonuses`)
 
 ---
 
@@ -534,3 +670,103 @@ award_vote_bonuses(p_session_id) SECURITY DEFINER RPC — awards participation (
 photo_votes added to supabase_realtime publication
 
 Voting flow: Admin opens voting → players vote at /vote.html (one vote per session, own photo disabled) → Admin closes voting → bonuses awarded in batch via RPC → gallery reveals results.
+
+
+## update 11/5/26 — Mafia Hunt Side-Game
+
+New files:
+
+- `public/mafia.html` — player-facing Mafia Hunt page: role card, attack form, cooldown timer, anonymous event feed
+- `public/css/mafia.css` — page styles following the same design token conventions as the rest of the app
+- `public/js/pages/mafia-page.js` — page controller: auth guard, inactive state, realtime role updates, attack submission, cooldown management
+- `public/js/db/mafia.js` — full DB layer: `getMyRole`, `getLastAttackTime`, `submitAttack`, `getMafiaFeed`, `onMyRoleChange`, `adminGetMafiaState`, `startMafia`, `endMafia`, `resetMafia`
+- `public/js/admin/mafia-manager.js` — admin panel: Start / End / Reset controls + live role table showing all players' roles, alive status, and kill counts
+
+Modified files:
+
+- `admin-page.js` — added `🕵️ Mafia Hunt` tab wired to `renderMafiaManager`
+- `game.html` — added hidden `#mafia-nav-link` in bottom nav (shown only when `mafia_active = true`)
+- `game-page.js` — `onGameStateChange` toggles mafia nav link visibility via `gs.mafia_active`
+- `supabase-schema.sql` — MIGRATION v7 block appended
+
+Database changes (applied live):
+
+- `game_state.mafia_active BOOLEAN` column added (default false)
+- `mafia_roles` table — one row per player per session; `CHECK (role IN ('spy','civilian'))`; UNIQUE `(user_id, session_id)`; RLS enabled (own row only)
+- `mafia_actions` table — attack audit trail; RLS enabled (own attacks only)
+- `start_mafia(session_id)` — randomly assigns 20% spy / 80% civilian to all session players; sets `mafia_active = true`
+- `mafia_attack(target_student_id, session_id)` — SECURITY DEFINER; enforces alive check, 15-minute cooldown, self-target prevention, outcome matrix; awards/deducts points via direct SQL
+- `get_mafia_feed(session_id, limit)` — SECURITY DEFINER; returns anonymised event strings without player identities
+- `admin_get_mafia_state(session_id)` — returns full role table for admin panel only
+- `admin_reset_mafia(session_id)` — deletes all roles and actions for the session, sets `mafia_active = false`
+
+---
+
+## analysis for new games 8:20am 11/5/26
+
+Games Folder Architecture Analysis
+The interface contract
+Every game file exports exactly one function with an identical signature:
+
+
+export function run(task, container, onComplete)
+task — the full task row from Supabase (.config, .description, .time_limit_sec, .hint, etc.)
+container — the <div id="game-container"> DOM node to render into
+onComplete({ correct, timeTakenSec, wrongAttempts }) — called once when the game ends
+That's the entire API. Games know nothing about users, sessions, Supabase, or scoring. task-page.js owns all of that after onComplete fires.
+
+Is it modular enough to add new games?
+Yes — with exactly 3 registration steps:
+
+Step	File	What to change
+1	task-page.js:18	Add entry to GAME_MODULE_MAP
+2	task-manager.js:73	Add to TASK_TYPES array
+3	supabase-schema.sql + live DB	ALTER TABLE tasks DROP CONSTRAINT ...; ALTER TABLE tasks ADD CHECK (type IN (..., 'new_type'))
+Then create public/js/games/new-game.js and add styles to task.css. Nothing else changes — scoring, sessions, auth, leaderboard, vote gallery, attempts recording are all completely untouched.
+
+What each game does and doesn't touch
+Concern	Games	task-page.js	Notes
+Supabase / DB	Never	Always	Games are pure DOM
+Session ID	Never	Always	Fully isolated
+Scoring formula	Never	Always	Games just pass time + wrong count
+CSS	Own namespace	No	quiz__*, puzzle__*, memory__* etc.
+Timer cleanup	Own setInterval	No	See concern below
+What to be concerned about
+1. The DB CHECK constraint is the hardest part
+
+
+-- supabase-schema.sql line 23
+type TEXT NOT NULL CHECK (type IN ('quiz','memory_match','fast_tap','puzzle','photo'))
+PostgreSQL doesn't support ADD VALUE to a CHECK constraint — you have to drop and recreate it. If you add a new type to the JS but forget the migration, the admin will get a silent 23514 check_violation error when trying to create a task of that type. This is the only step that can't be done with a simple file edit.
+
+2. esc() is duplicated across three files
+
+puzzle.js and photo-challenge.js each define an identical local esc() function. quiz.js has the same thing named escQ(). ui.js already exports escapeHTML. It's harmless duplication but worth knowing when reading the code.
+
+3. Memory and fast-tap don't honour a missing time_limit_sec the same way
+
+memory-match.js line 17: task.time_limit_sec || 90 — if admin leaves the timer blank, memory match always runs for 90 seconds. There's no "no timer" mode.
+fast-tap.js line 19: cfg.time_window_sec || (task.time_limit_sec || 15) — same pattern, defaults to 15 seconds.
+quiz.js, puzzle.js: timer is genuinely optional — if (timeLimitSec > 0).
+So if you add a new game, be deliberate about whether a missing time_limit_sec should mean no timer or a default timer.
+
+4. No teardown/cleanup hook
+
+Games start setInterval timers but there's no way for task-page.js to cancel them if the player navigates away mid-game (e.g. hits the browser back button). The intervals keep ticking until the tab is closed or garbage collected. For a one-day supervised event with short game durations this is harmless, but worth knowing for any longer-lived deployment.
+
+5. The photo type has special handling in task-page.js
+
+
+// task-page.js line 125
+const { correct, timeTakenSec, wrongAttempts = 0, photoBlob } = result;
+Photo is the only game that passes extra data back via onComplete. If you add a game that needs similar special output (e.g. a GPS coordinate, a drawn image, a recorded audio clip), you'd add a field to the onComplete payload and a corresponding handler block in task-page.js — the destructuring-with-defaults pattern makes this safe and non-breaking for all other games.
+
+Adding a new game: what's affected vs. safe
+Affected	Safe / untouched
+task-page.js (GAME_MODULE_MAP + optional result handler)	scoring.js
+task-manager.js (TASK_TYPES array)	attempts.js, users.js, all DB modules
+task.css (new CSS classes)	Leaderboard, vote gallery, sessions
+supabase-schema.sql + live DB (CHECK constraint migration)	Auth, router, admin panels other than task-manager
+New games/your-game.js file	All existing game files
+Bottom line: the system is clean and ready to extend. The one non-obvious friction point is the DB CHECK constraint — make a note to always include the schema migration when adding a new game type.
+
