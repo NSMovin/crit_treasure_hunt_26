@@ -122,7 +122,7 @@ function renderTaskHeader(task) {
 // ── Completion pipeline ───────────────────────────────────────────────────────
 
 async function handleCompletion(result, task, uid, profile, sessionId) {
-  const { correct, timeTakenSec, wrongAttempts = 0, photoBase64 } = result;
+  const { correct, timeTakenSec, wrongAttempts = 0, photoBlob } = result;
   showSpinner();
 
   try {
@@ -150,9 +150,9 @@ async function handleCompletion(result, task, uid, profile, sessionId) {
 
     // Upload photo to Supabase Storage if present
     let photoUrl = null;
-    if (photoBase64) {
+    if (photoBlob) {
       try {
-        photoUrl = await uploadPhoto(photoBase64, task.task_id, uid);
+        photoUrl = await uploadPhoto(photoBlob, task.task_id, uid);
       } catch (e) {
         console.warn('Photo upload failed (non-critical):', e);
       }

@@ -26,7 +26,8 @@ export const APP_SETTINGS = {
   photo: {
     maxWidthPx:   400,
     maxHeightPx:  400,
-    jpegQuality:  0.72                 // 0.0–1.0
+    jpegQuality:  0.72,                // 0.0–1.0
+    maxBlobBytes: 150000               // ~150 KB; triggers recursive quality reduction if exceeded
   },
 
   // ── Voting ─────────────────────────────────────────────────────────────────

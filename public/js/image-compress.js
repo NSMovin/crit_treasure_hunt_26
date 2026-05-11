@@ -1,21 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // image-compress.js
 // Client-side image compression using Canvas API.
-// Converts any image file to a compressed base64 JPEG string
-// safe to store inside a Firestore document.
+// Resizes and compresses any image File to a JPEG Blob ready for direct upload
+// to Supabase Storage (no base64 intermediary needed).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { APP_SETTINGS } from '/js/app-settings.js';
 
-const { maxWidthPx, maxHeightPx, jpegQuality, maxBase64Bytes } = APP_SETTINGS.photo;
+const { maxWidthPx, maxHeightPx, jpegQuality, maxBlobBytes } = APP_SETTINGS.photo;
 
 /**
- * Compresses an image File to a base64 JPEG data URL.
- * Recursively reduces quality if the result is still too large.
+ * Compresses an image File to a JPEG Blob.
+ * Recursively reduces quality/dimensions if the result exceeds maxBlobBytes.
  *
- * @param {File} file        - The image file from <input type="file">
- * @param {object} [opts]    - Override defaults
- * @returns {Promise<string>} - Resolves with a base64 data URL
+ * @param {File}   file     - The image file from <input type="file">
+ * @param {object} [opts]   - Override defaults
+ * @returns {Promise<Blob>} - Resolves with a JPEG Blob
  */
 export function compressImage(file, opts = {}) {
   const maxW    = opts.maxWidthPx  || maxWidthPx;
@@ -42,20 +42,21 @@ export function compressImage(file, opts = {}) {
       canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
 
-      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('Canvas toBlob failed.')); return; }
 
-      // If still too large, try again with reduced quality
-      if (dataUrl.length > maxBase64Bytes && quality > 0.25) {
-        resolve(
-          compressImage(file, {
-            maxWidthPx:  Math.floor(maxW  * 0.8),
-            maxHeightPx: Math.floor(maxH  * 0.8),
-            quality:     Math.max(0.25, quality - 0.15)
-          })
-        );
-      } else {
-        resolve(dataUrl);
-      }
+        if (blob.size > maxBlobBytes && quality > 0.25) {
+          resolve(
+            compressImage(file, {
+              maxWidthPx:  Math.floor(maxW  * 0.8),
+              maxHeightPx: Math.floor(maxH  * 0.8),
+              quality:     Math.max(0.25, quality - 0.15)
+            })
+          );
+        } else {
+          resolve(blob);
+        }
+      }, 'image/jpeg', quality);
     };
 
     img.onerror = () => {
@@ -65,11 +66,4 @@ export function compressImage(file, opts = {}) {
 
     img.src = objUrl;
   });
-}
-
-/**
- * Returns approximate file size in KB from a base64 string.
- */
-export function base64SizeKB(dataUrl) {
-  return Math.round(dataUrl.length * 0.75 / 1024);
 }

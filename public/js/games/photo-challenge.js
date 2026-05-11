@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // games/photo-challenge.js
 // Photo capture + client-side compression.
-// The compressed base64 is returned via onComplete; task-page.js uploads it
+// The compressed Blob is returned via onComplete; task-page.js uploads it
 // to Supabase Storage and stores the resulting URL.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { compressImage, base64SizeKB } from '/js/image-compress.js';
+import { compressImage } from '/js/image-compress.js';
 
 /**
  * task.config = {
@@ -13,7 +13,7 @@ import { compressImage, base64SizeKB } from '/js/image-compress.js';
  * }
  *
  * onComplete receives:
- *   { correct: true, timeTakenSec, wrongAttempts: 0, photoBase64: string }
+ *   { correct: true, timeTakenSec, wrongAttempts: 0, photoBlob: Blob }
  *
  * Points are awarded optimistically — admin reviews photos manually.
  */
@@ -21,7 +21,8 @@ export function run(task, container, onComplete) {
   const cfg       = task.config || {};
   const prompt    = cfg.prompt  || task.description || 'Take a photo for this challenge.';
   const startTime = Date.now();
-  let   photoData = null;
+  let   photoData = null;   // Blob
+  let   previewObjUrl = null;
   let   done      = false;
 
   container.innerHTML = `
@@ -59,12 +60,16 @@ export function run(task, container, onComplete) {
     submitBtn.disabled   = true;
 
     try {
-      const dataUrl = await compressImage(file);
-      photoData     = dataUrl;
+      const blob = await compressImage(file);
+      photoData  = blob;
 
-      previewImg.src            = dataUrl;
+      // Revoke previous object URL before creating a new one
+      if (previewObjUrl) URL.revokeObjectURL(previewObjUrl);
+      previewObjUrl = URL.createObjectURL(blob);
+
+      previewImg.src            = previewObjUrl;
       previewWrap.style.display = 'block';
-      sizeEl.textContent        = `~${base64SizeKB(dataUrl)} KB`;
+      sizeEl.textContent        = `~${Math.round(blob.size / 1024)} KB`;
       submitBtn.disabled        = false;
       statusEl.textContent      = 'Looks good! Hit Submit when ready.';
     } catch (err) {
@@ -80,7 +85,7 @@ export function run(task, container, onComplete) {
     statusEl.textContent = 'Uploading…';
 
     const timeTakenSec = (Date.now() - startTime) / 1000;
-    onComplete({ correct: true, timeTakenSec, wrongAttempts: 0, photoBase64: photoData });
+    onComplete({ correct: true, timeTakenSec, wrongAttempts: 0, photoBlob: photoData });
   });
 }
 
