@@ -29,7 +29,9 @@ crit_treasure_hunt_26/
     ├── index.html               # Entry / sign-in / profile setup
     ├── game.html                # Player dashboard (tasks list, score)
     ├── task.html                # Task runner (QR lands here)
+    ├── unlock.html              # QR landing page → unlocks task
     ├── leaderboard.html         # Real-time leaderboard (public)
+    ├── vote.html                # Community photo voting gallery
     ├── admin.html               # Admin dashboard (passcode-gated)
     │
     ├── css/
@@ -39,6 +41,7 @@ crit_treasure_hunt_26/
     │   ├── game.css             # Player dashboard styles
     │   ├── task.css             # Task runner + all mini-games
     │   ├── leaderboard.css      # Leaderboard styles
+    │   ├── vote.css             # Photo voting gallery styles
     │   └── admin.css            # Admin dashboard styles
     │
     └── js/
@@ -57,7 +60,10 @@ crit_treasure_hunt_26/
         │   ├── attempts.js
         │   ├── leaderboard.js
         │   ├── announcements.js
-        │   └── game-state.js
+        │   ├── game-state.js
+        │   ├── game-sessions.js
+        │   ├── unlocked-tasks.js
+        │   └── photo-votes.js
         │
         ├── games/               # Mini-game implementations
         │   ├── quiz.js
@@ -70,14 +76,18 @@ crit_treasure_hunt_26/
         │   ├── index-page.js
         │   ├── game-page.js
         │   ├── task-page.js
+        │   ├── unlock-page.js
         │   ├── leaderboard-page.js
+        │   ├── vote-page.js
         │   └── admin-page.js
         │
         └── admin/               # Admin panel sub-modules
             ├── task-manager.js
             ├── announcement-manager.js
             ├── player-monitor.js
-            └── hint-manager.js
+            ├── hint-manager.js
+            ├── session-manager.js
+            └── voting-manager.js
 ```
 
 ---
@@ -277,6 +287,8 @@ Set the riddle in the task `description` field. Config:
 
 ## Scoring Formula
 
+### Task Completion
+
 ```
 Final Score = base_points + speed_bonus + first_solver_bonus - wrong_attempt_penalty
 ```
@@ -289,6 +301,18 @@ Final Score = base_points + speed_bonus + first_solver_bonus - wrong_attempt_pen
 | `wrong_attempt_penalty` | −10 pts per wrong attempt |
 
 All values are configurable in `public/js/app-settings.js → scoring`.
+
+### Photo Voting Bonuses (awarded in batch when admin closes voting)
+
+| Component | Default |
+|-----------|---------|
+| `participationBonus` | +50 pts for every player who casts any vote |
+| `perVoteBonus` | +10 pts per vote a photo receives |
+| `podium1st` | +100 pts for the most-voted photo |
+| `podium2nd` | +60 pts |
+| `podium3rd` | +30 pts |
+
+Configurable in `public/js/app-settings.js → voting`. Ties share the same podium rank.
 
 ---
 
@@ -354,6 +378,41 @@ All values are configurable in `public/js/app-settings.js → scoring`.
 | first_solvers | JSONB `{task_id: user_id}` |
 | started_at | TIMESTAMPTZ |
 | ends_at | TIMESTAMPTZ |
+| active_session_id | BIGINT | FK → game_sessions.id |
+| voting_open | BOOLEAN | Controls photo voting gallery |
+
+### `photo_votes`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGSERIAL | Auto-generated |
+| voter_user_id | UUID | References users.id |
+| attempt_id | UUID | References attempts.id (the photo submission) |
+| session_id | BIGINT | References game_sessions.id |
+| created_at | TIMESTAMPTZ | |
+
+UNIQUE constraint on `(voter_user_id, session_id)` — one vote per player per session.
+
+---
+
+## Photo Voting Workflow
+
+### Admin Steps
+
+1. After photo tasks are complete, go to **Admin → 📸 Voting**
+2. Click **Open Voting** — players see a `📸 Vote` link appear in the home nav
+3. Players visit `/vote.html` to view the gallery and cast their vote
+   - Author names are hidden during voting (anonymous)
+   - Each player gets exactly one vote per session; own photo is disabled
+4. Click **Close Voting & Award Bonuses** — the `award_vote_bonuses` RPC runs:
+   - +50 participation bonus to everyone who voted
+   - +10 × vote count to each photo submitter
+   - +100 / +60 / +30 podium bonus for top 3
+   - Gallery then reveals author names and vote counts
+
+### QR Code format for photo task stations
+```
+https://crit-treasure-hunt-26.vercel.app/unlock.html?task=<task_id>
+```
 
 ---
 
@@ -449,5 +508,29 @@ session-manager.js — new panel (create/activate/list sessions)
 admin-page.js — added 🎮 Sessions tab wired to renderSessionManager
 Schema: MIGRATION v3 block appended to supabase-schema.sql for documentation. All SQL was already applied live to the DB in the previous session.
 
+## update 11/5/26 — Community photo voting system
 
+New files:
 
+public/vote.html — player-facing photo gallery; shows photos anonymously while voting is open, reveals author names and vote counts when closed
+public/js/pages/vote-page.js — gallery renderer, vote handler, realtime updates
+public/js/db/photo-votes.js — DB layer: getPhotoSubmissions, getMyVote, castVote, onPhotoVotesChange
+public/js/admin/voting-manager.js — admin panel: open/close voting, live vote-count table, award bonuses
+public/css/vote.css — photo grid and card styles
+
+Modified files:
+
+admin-page.js — added 📸 Voting tab
+game.html — added hidden 📸 Vote nav link (visible only when voting is open)
+game-page.js — onGameStateChange toggles vote nav link visibility
+app-settings.js — added voting bonus config block (participationBonus, perVoteBonus, podium1st/2nd/3rd)
+supabase-schema.sql — MIGRATION v5 block appended
+
+Database changes (applied live):
+
+photo_votes table — id, voter_user_id, attempt_id (UUID), session_id; UNIQUE(voter_user_id, session_id); RLS enabled
+voting_open BOOLEAN column added to game_state (default false)
+award_vote_bonuses(p_session_id) SECURITY DEFINER RPC — awards participation (+50), per-vote (+10×votes), podium (+100/60/30), then sets voting_open = false
+photo_votes added to supabase_realtime publication
+
+Voting flow: Admin opens voting → players vote at /vote.html (one vote per session, own photo disabled) → Admin closes voting → bonuses awarded in batch via RPC → gallery reveals results.
