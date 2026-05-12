@@ -116,15 +116,17 @@ function renderTable(container, players, sessionBans) {
   `;
 
   wrap.querySelectorAll('.mod-manage-btn').forEach((btn) => {
-    const uid  = btn.dataset.uid;
-    const p    = players.find((x) => x.id === uid);
-    const sp   = sessionBans.get(uid);
-    if (p) openManageModal(p, sp, () => {
-      // Re-run the current search after a change
-      const q = container.querySelector('#mod-search')?.value || '';
-      searchPlayers(q).then(async (fresh) => {
-        const freshBans = await getSessionBans(_sessionId);
-        renderTable(container, fresh, freshBans);
+    const uid = btn.dataset.uid;
+    const p   = players.find((x) => x.id === uid);
+    const sp  = sessionBans.get(uid);
+    if (!p) return;
+    btn.addEventListener('click', () => {
+      openManageModal(p, sp, () => {
+        const q = container.querySelector('#mod-search')?.value || '';
+        searchPlayers(q).then(async (fresh) => {
+          const freshBans = await getSessionBans(_sessionId);
+          renderTable(container, fresh, freshBans);
+        });
       });
     });
   });
