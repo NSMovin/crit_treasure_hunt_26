@@ -86,13 +86,16 @@
 .memory__timer     { text-align: right; font-size: var(--font-sz-sm); color: var(--clr-text-muted); margin-bottom: var(--sp-sm); }
 .memory__grid {
   display:     grid;
-  gap:         var(--sp-xs);
-  margin:      var(--sp-sm) 0;
+  gap:         clamp(6px, 2vw, 10px);
+  /* negative margins cancel the game-container padding so the grid fills the
+     full viewport width — body overflow-x:hidden prevents any lateral scroll */
+  margin:      var(--sp-sm) calc(-1 * var(--sp-md));
 }
 .memory__hint { text-align: center; color: var(--clr-text-muted); font-size: var(--font-sz-sm); }
 
 .mem-card {
   aspect-ratio: 1;
+  min-height:   72px;
   cursor:       pointer;
   perspective:  600px;
 }
@@ -112,7 +115,7 @@
   display:      flex;
   align-items:  center;
   justify-content: center;
-  font-size:    clamp(20px, 5vw, 32px);
+  font-size:    clamp(26px, 7.5vw, 40px);
   border-radius: var(--radius-sm);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
