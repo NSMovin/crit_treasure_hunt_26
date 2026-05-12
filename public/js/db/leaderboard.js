@@ -70,7 +70,8 @@ export function computeTeamScores(entries) {
   const teams = {};
 
   for (const entry of entries) {
-    const name = entry.team_name || '(No Team)';
+    const name = entry.team_name;
+    if (!name) continue;          // players without a team don't count in team rankings
     if (!teams[name]) {
       teams[name] = { team_name: name, total_score: 0, member_count: 0, tasks_completed: 0 };
     }
