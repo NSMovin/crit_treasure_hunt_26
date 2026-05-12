@@ -908,3 +908,395 @@ BEGIN
   DELETE FROM tribe_assignments  WHERE task_id = p_task_id AND session_id = p_session_id;
 END;
 $$;
+
+
+-- ============================================================
+-- MIGRATION v10: Dual-layer moderation and ban system
+-- ============================================================
+
+-- ── 1. Add ban columns to users ───────────────────────────────────────────────
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS is_game_banned   BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS game_ban_reason  TEXT;
+
+-- ── 2. session_players table (per-session participation + session ban) ────────
+
+CREATE TABLE IF NOT EXISTS session_players (
+  id                 BIGSERIAL PRIMARY KEY,
+  user_id            UUID    NOT NULL REFERENCES users(id)          ON DELETE CASCADE,
+  session_id         BIGINT  NOT NULL REFERENCES game_sessions(id)  ON DELETE CASCADE,
+  is_session_banned  BOOLEAN NOT NULL DEFAULT false,
+  session_ban_reason TEXT,
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_players_session ON session_players (session_id);
+CREATE INDEX IF NOT EXISTS idx_session_players_user    ON session_players (user_id);
+
+ALTER TABLE session_players ENABLE ROW LEVEL SECURITY;
+
+-- Players can read their own row (to check ban status on page load)
+CREATE POLICY "session_players_read_own" ON session_players
+  FOR SELECT USING (auth.uid() = user_id);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE session_players;
+
+-- ── 3. Refresh session_leaderboard view — exclude banned players ──────────────
+
+-- Excludes session-banned players (via session_players) and game-banned players
+-- (via users.is_game_banned). Does NOT delete scores; purely a display filter.
+CREATE OR REPLACE VIEW session_leaderboard AS
+SELECT
+  ss.user_id,
+  ss.session_id,
+  ss.score,
+  ss.tasks_completed,
+  u.full_name,
+  u.team_name
+FROM session_scores ss
+JOIN users u ON ss.user_id = u.id
+LEFT JOIN session_players sp
+  ON sp.user_id = ss.user_id AND sp.session_id = ss.session_id
+WHERE u.is_game_banned = false
+  AND COALESCE(sp.is_session_banned, false) = false;
+
+-- ── 4. Tighten RLS: block game-banned users from recording attempts ───────────
+
+-- Drop existing policy, recreate with game-ban guard
+DROP POLICY IF EXISTS "attempts_insert" ON attempts;
+CREATE POLICY "attempts_insert" ON attempts
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = auth.uid()
+    AND NOT COALESCE((SELECT is_game_banned FROM users WHERE id = auth.uid()), false)
+  );
+
+-- ── 5. Tighten RLS: block game-banned users from voting ──────────────────────
+
+DROP POLICY IF EXISTS "Players can insert own vote" ON photo_votes;
+CREATE POLICY "Players can insert own vote" ON photo_votes
+  FOR INSERT
+  WITH CHECK (
+    auth.uid() = voter_user_id
+    AND NOT COALESCE((SELECT is_game_banned FROM users WHERE id = auth.uid()), false)
+  );
+
+-- ── 6. Admin RPCs ─────────────────────────────────────────────────────────────
+
+-- Set or clear a global game ban on a user
+CREATE OR REPLACE FUNCTION admin_set_game_ban(
+  p_user_id UUID,
+  p_banned  BOOLEAN,
+  p_reason  TEXT DEFAULT NULL
+)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  UPDATE users
+  SET is_game_banned  = p_banned,
+      game_ban_reason = CASE WHEN p_banned THEN p_reason ELSE NULL END
+  WHERE id = p_user_id;
+END;
+$$;
+
+-- Set or clear a session ban for a user (upserts into session_players)
+CREATE OR REPLACE FUNCTION admin_set_session_ban(
+  p_user_id    UUID,
+  p_session_id BIGINT,
+  p_banned     BOOLEAN,
+  p_reason     TEXT DEFAULT NULL
+)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  INSERT INTO session_players (user_id, session_id, is_session_banned, session_ban_reason)
+  VALUES (p_user_id, p_session_id, p_banned, CASE WHEN p_banned THEN p_reason ELSE NULL END)
+  ON CONFLICT (user_id, session_id) DO UPDATE SET
+    is_session_banned  = p_banned,
+    session_ban_reason = CASE WHEN p_banned THEN p_reason ELSE NULL END;
+END;
+$$;
+
+-- Reset a player's score (both global and session) to zero
+CREATE OR REPLACE FUNCTION admin_reset_player_score(
+  p_user_id    UUID,
+  p_session_id BIGINT DEFAULT NULL
+)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  UPDATE users SET score = 0 WHERE id = p_user_id;
+  IF p_session_id IS NOT NULL THEN
+    UPDATE session_scores SET score = 0
+    WHERE user_id = p_user_id AND session_id = p_session_id;
+  END IF;
+END;
+$$;
+
+-- ── 7. Update add_score — block game-banned users from earning points ─────────
+
+CREATE OR REPLACE FUNCTION add_score(
+  p_user_id    UUID,
+  p_delta      INTEGER,
+  p_task_id    TEXT,
+  p_session_id BIGINT DEFAULT NULL
+)
+RETURNS INTEGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF auth.uid() IS DISTINCT FROM p_user_id THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  -- Moderation: game-banned players cannot earn points
+  IF (SELECT is_game_banned FROM users WHERE id = p_user_id) IS TRUE THEN
+    RAISE EXCEPTION 'Account restricted from gameplay actions.';
+  END IF;
+
+  UPDATE users SET
+    score           = score + p_delta,
+    tasks_completed = array_append(tasks_completed, p_task_id),
+    last_active     = NOW()
+  WHERE id = p_user_id;
+
+  IF p_session_id IS NOT NULL THEN
+    INSERT INTO session_scores (user_id, session_id, score, tasks_completed)
+    VALUES (p_user_id, p_session_id, p_delta, ARRAY[p_task_id])
+    ON CONFLICT (user_id, session_id) DO UPDATE SET
+      score           = session_scores.score + EXCLUDED.score,
+      tasks_completed = array_append(session_scores.tasks_completed, p_task_id);
+  END IF;
+
+  RETURN (SELECT score FROM users WHERE id = p_user_id);
+END;
+$$;
+
+-- ── 8. Update mafia_attack — block game-banned attackers ─────────────────────
+
+CREATE OR REPLACE FUNCTION mafia_attack(p_target_student_id TEXT, p_session_id BIGINT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_attacker_id  UUID := auth.uid();
+  v_target       RECORD; v_atk_role RECORD; v_tgt_role RECORD;
+  v_last_attack  TIMESTAMPTZ;
+  v_success      BOOLEAN; v_points_delta INTEGER; v_outcome TEXT;
+BEGIN
+  -- Moderation: game-banned players cannot use Mafia Hunt
+  IF (SELECT is_game_banned FROM users WHERE id = v_attacker_id) IS TRUE THEN
+    RAISE EXCEPTION 'Account restricted from gameplay actions.';
+  END IF;
+
+  SELECT * INTO v_atk_role FROM mafia_roles WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  IF NOT FOUND               THEN RAISE EXCEPTION 'You are not enrolled in Mafia Hunt.'; END IF;
+  IF NOT v_atk_role.is_alive THEN RAISE EXCEPTION 'Dead players cannot attack.'; END IF;
+  SELECT MAX(created_at) INTO v_last_attack FROM mafia_actions
+  WHERE attacker_user_id = v_attacker_id AND session_id = p_session_id;
+  IF v_last_attack IS NOT NULL AND v_last_attack > NOW() - INTERVAL '15 minutes' THEN
+    RAISE EXCEPTION 'Cooldown active. Wait % more seconds.',
+      EXTRACT(EPOCH FROM (v_last_attack + INTERVAL '15 minutes' - NOW()))::INTEGER;
+  END IF;
+  SELECT * INTO v_target FROM users WHERE student_id = p_target_student_id;
+  IF NOT FOUND               THEN RAISE EXCEPTION 'No player found with that student ID.'; END IF;
+  IF v_target.id = v_attacker_id THEN RAISE EXCEPTION 'You cannot target yourself.'; END IF;
+  SELECT * INTO v_tgt_role FROM mafia_roles WHERE user_id = v_target.id AND session_id = p_session_id;
+  IF NOT FOUND               THEN RAISE EXCEPTION 'That player is not enrolled in Mafia Hunt.'; END IF;
+  IF NOT v_tgt_role.is_alive THEN RAISE EXCEPTION 'That player is already eliminated.'; END IF;
+  IF v_atk_role.role = 'spy' AND v_tgt_role.role = 'civilian' THEN
+    v_success := TRUE;  v_points_delta := 100;  v_outcome := 'eliminated_civilian';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_target.id      AND session_id = p_session_id;
+    UPDATE mafia_roles SET kills = kills + 1   WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  ELSIF v_atk_role.role = 'spy' AND v_tgt_role.role = 'spy' THEN
+    v_success := FALSE; v_points_delta := -75;  v_outcome := 'spy_mistake';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  ELSIF v_atk_role.role = 'civilian' AND v_tgt_role.role = 'spy' THEN
+    v_success := TRUE;  v_points_delta := 100;  v_outcome := 'exposed_spy';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_target.id      AND session_id = p_session_id;
+    UPDATE mafia_roles SET kills = kills + 1   WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  ELSE
+    v_success := FALSE; v_points_delta := -75;  v_outcome := 'civilian_mistake';
+    UPDATE mafia_roles SET is_alive = FALSE WHERE user_id = v_target.id AND session_id = p_session_id;
+  END IF;
+  UPDATE users          SET score = score + v_points_delta, last_active = NOW() WHERE id = v_attacker_id;
+  UPDATE session_scores SET score = score + v_points_delta
+  WHERE user_id = v_attacker_id AND session_id = p_session_id;
+  INSERT INTO mafia_actions (attacker_user_id, target_user_id, session_id, success)
+  VALUES (v_attacker_id, v_target.id, p_session_id, v_success);
+  RETURN jsonb_build_object('outcome', v_outcome, 'success', v_success, 'points_delta', v_points_delta);
+END;
+$$;
+
+-- ── 9. Update get_or_assign_tribe — block game-banned players ─────────────────
+
+CREATE OR REPLACE FUNCTION get_or_assign_tribe(p_task_id TEXT, p_session_id BIGINT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_caller      UUID := auth.uid();
+  v_existing    tribe_assignments%ROWTYPE;
+  v_config      JSONB;
+  v_tribe_size  INT;
+  v_labels      TEXT[];
+  v_label       TEXT;
+  v_counts      RECORD;
+  v_best_label  TEXT;
+  v_best_count  INT := 9999;
+  v_cooldown    INT := 0;
+  v_last_fail   TIMESTAMPTZ;
+  v_cool_mins   INT;
+BEGIN
+  IF v_caller IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+  -- Moderation: game-banned players cannot join tribe tasks
+  IF (SELECT is_game_banned FROM users WHERE id = v_caller) IS TRUE THEN
+    RAISE EXCEPTION 'Account restricted from gameplay actions.';
+  END IF;
+
+  -- Return existing assignment if present
+  SELECT * INTO v_existing
+  FROM tribe_assignments
+  WHERE user_id = v_caller AND task_id = p_task_id AND session_id = p_session_id;
+
+  IF FOUND THEN
+    SELECT config INTO v_config FROM tasks WHERE task_id = p_task_id;
+    v_cool_mins := COALESCE((v_config->>'cooldown_minutes')::INT, 2);
+    SELECT MAX(created_at) INTO v_last_fail
+    FROM tribe_submissions
+    WHERE submitter_id = v_caller AND task_id = p_task_id AND session_id = p_session_id AND success = FALSE;
+    IF v_last_fail IS NOT NULL THEN
+      v_cooldown := GREATEST(0, v_cool_mins * 60 - EXTRACT(EPOCH FROM (NOW() - v_last_fail))::INT);
+    END IF;
+    RETURN jsonb_build_object(
+      'tribe_label',      v_existing.tribe_label,
+      'completed_at',     v_existing.completed_at,
+      'tribe_size',       COALESCE((v_config->>'tribe_size')::INT, 4),
+      'cooldown_seconds', v_cooldown
+    );
+  END IF;
+
+  -- Verify task exists and is active tribe_finder
+  SELECT config INTO v_config FROM tasks WHERE task_id = p_task_id AND active = TRUE AND type = 'tribe_finder';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Task not available'; END IF;
+
+  v_tribe_size := COALESCE((v_config->>'tribe_size')::INT, 4);
+  SELECT ARRAY(SELECT jsonb_array_elements_text(
+    COALESCE(v_config->'tribe_labels', '["Phoenix","Kraken","Titan","Nova","Shadow","Eclipse"]'::jsonb)
+  )) INTO v_labels;
+
+  -- Find label with fewest members (tie-break: first in list)
+  FOREACH v_label IN ARRAY v_labels LOOP
+    SELECT COUNT(*) INTO v_counts
+    FROM tribe_assignments
+    WHERE task_id = p_task_id AND session_id = p_session_id AND tribe_label = v_label;
+    IF v_counts.count < v_best_count THEN
+      v_best_count := v_counts.count;
+      v_best_label := v_label;
+    END IF;
+  END LOOP;
+
+  INSERT INTO tribe_assignments (user_id, task_id, session_id, tribe_label)
+  VALUES (v_caller, p_task_id, p_session_id, v_best_label)
+  ON CONFLICT DO NOTHING;
+
+  -- Re-select in case of race
+  SELECT * INTO v_existing
+  FROM tribe_assignments
+  WHERE user_id = v_caller AND task_id = p_task_id AND session_id = p_session_id;
+
+  RETURN jsonb_build_object(
+    'tribe_label',      v_existing.tribe_label,
+    'completed_at',     v_existing.completed_at,
+    'tribe_size',       v_tribe_size,
+    'cooldown_seconds', 0
+  );
+END;
+$$;
+
+-- ── 10. Update submit_tribe_group — block game-banned players ─────────────────
+
+CREATE OR REPLACE FUNCTION submit_tribe_group(
+  p_task_id            TEXT,
+  p_session_id         BIGINT,
+  p_member_student_ids TEXT[]
+)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_caller      UUID := auth.uid();
+  v_assignment  tribe_assignments%ROWTYPE;
+  v_config      JSONB;
+  v_tribe_size  INT;
+  v_cool_mins   INT;
+  v_last_fail   TIMESTAMPTZ;
+  v_cooldown    INT;
+  v_sid         TEXT;
+  v_member_uid  UUID;
+  v_member_asgn tribe_assignments%ROWTYPE;
+  v_all_valid   BOOLEAN := TRUE;
+  v_member_ids  UUID[] := '{}';
+BEGIN
+  IF v_caller IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+  -- Moderation: game-banned players cannot submit
+  IF (SELECT is_game_banned FROM users WHERE id = v_caller) IS TRUE THEN
+    RAISE EXCEPTION 'Account restricted from gameplay actions.';
+  END IF;
+
+  -- Fetch caller assignment
+  SELECT * INTO v_assignment
+  FROM tribe_assignments
+  WHERE user_id = v_caller AND task_id = p_task_id AND session_id = p_session_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Not assigned to this task'; END IF;
+  IF v_assignment.completed_at IS NOT NULL THEN RAISE EXCEPTION 'Already completed'; END IF;
+
+  -- Cooldown check
+  SELECT config INTO v_config FROM tasks WHERE task_id = p_task_id;
+  v_cool_mins := COALESCE((v_config->>'cooldown_minutes')::INT, 2);
+  SELECT MAX(created_at) INTO v_last_fail
+  FROM tribe_submissions
+  WHERE submitter_id = v_caller AND task_id = p_task_id AND session_id = p_session_id AND success = FALSE;
+  IF v_last_fail IS NOT NULL THEN
+    v_cooldown := GREATEST(0, v_cool_mins * 60 - EXTRACT(EPOCH FROM (NOW() - v_last_fail))::INT);
+    IF v_cooldown > 0 THEN
+      RETURN jsonb_build_object('success', FALSE, 'outcome', 'cooldown', 'cooldown_seconds', v_cooldown, 'points_delta', 0);
+    END IF;
+  END IF;
+
+  -- Validate count
+  v_tribe_size := COALESCE((v_config->>'tribe_size')::INT, 4);
+  IF array_length(p_member_student_ids, 1) IS DISTINCT FROM (v_tribe_size - 1) THEN
+    RAISE EXCEPTION 'Wrong number of members';
+  END IF;
+
+  -- Validate each submitted student ID
+  FOREACH v_sid IN ARRAY p_member_student_ids LOOP
+    SELECT id INTO v_member_uid FROM users WHERE student_id = v_sid;
+    IF NOT FOUND THEN v_all_valid := FALSE; EXIT; END IF;
+    IF v_member_uid = v_caller THEN v_all_valid := FALSE; EXIT; END IF;
+    SELECT * INTO v_member_asgn
+    FROM tribe_assignments
+    WHERE user_id = v_member_uid AND task_id = p_task_id AND session_id = p_session_id
+      AND tribe_label = v_assignment.tribe_label AND completed_at IS NULL;
+    IF NOT FOUND THEN v_all_valid := FALSE; EXIT; END IF;
+    v_member_ids := array_append(v_member_ids, v_member_uid);
+  END LOOP;
+
+  IF NOT v_all_valid THEN
+    -- Record failed attempt and deduct points
+    INSERT INTO tribe_submissions (submitter_id, task_id, session_id, submitted_ids, success)
+    VALUES (v_caller, p_task_id, p_session_id, to_jsonb(p_member_student_ids), FALSE);
+    UPDATE users SET score = GREATEST(0, score - 50) WHERE id = v_caller;
+    UPDATE session_scores SET score = GREATEST(0, score - 50)
+    WHERE user_id = v_caller AND session_id = p_session_id;
+    RETURN jsonb_build_object(
+      'success', FALSE, 'outcome', 'wrong_group',
+      'cooldown_seconds', v_cool_mins * 60, 'points_delta', -50
+    );
+  END IF;
+
+  -- Mark caller + all members as completed
+  UPDATE tribe_assignments SET completed_at = NOW()
+  WHERE task_id = p_task_id AND session_id = p_session_id
+    AND (user_id = v_caller OR user_id = ANY(v_member_ids));
+
+  INSERT INTO tribe_submissions (submitter_id, task_id, session_id, submitted_ids, success)
+  VALUES (v_caller, p_task_id, p_session_id, to_jsonb(p_member_student_ids), TRUE);
+
+  RETURN jsonb_build_object('success', TRUE, 'outcome', 'tribe_found', 'cooldown_seconds', 0, 'points_delta', 0);
+END;
+$$;

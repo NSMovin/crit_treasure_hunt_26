@@ -88,7 +88,7 @@ function renderDashboard() {
       </header>
 
       <nav class="admin-tabs" role="tablist">
-        ${['tasks','players','announcements','hints','settings','sessions','voting','mafia','tribe-finder'].map((tab, i) => `
+        ${['tasks','players','announcements','hints','settings','sessions','voting','mafia','tribe-finder','moderation'].map((tab, i) => `
           <button class="admin-tab ${i === 0 ? 'admin-tab--active' : ''}"
                   data-panel="${tab}" role="tab">${tabLabel(tab)}</button>
         `).join('')}
@@ -148,6 +148,11 @@ async function loadPanel(name) {
       case 'tribe-finder': {
         const { renderTribeFinderManager } = await import('/js/admin/tribe-finder-manager.js');
         await renderTribeFinderManager(content, _panelUnsubs);
+        break;
+      }
+      case 'moderation': {
+        const { renderModerationManager } = await import('/js/admin/moderation-manager.js');
+        await renderModerationManager(content, _panelUnsubs);
         break;
       }
     }
@@ -246,6 +251,7 @@ function tabLabel(tab) {
     sessions:      '🎮 Sessions',
     voting:        '📸 Voting',
     mafia:         '🕵️ Mafia Hunt',
-    'tribe-finder': '🏕️ Tribe Finder'
+    'tribe-finder': '🏕️ Tribe Finder',
+    moderation:     '🛡️ Moderation'
   }[tab] || tab;
 }

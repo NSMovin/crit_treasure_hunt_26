@@ -7,6 +7,7 @@
 import { requirePlayer }                            from '/js/router.js';
 import { getTask }                                  from '/js/db/tasks.js';
 import { hasCompletedTask, addScore }               from '/js/db/users.js';
+import { checkGameBan }                             from '/js/db/moderation.js';
 import { submitAttempt, claimFirstSolver,
          countWrongAttempts }                       from '/js/db/attempts.js';
 import { getActiveSessionId }                       from '/js/db/game-state.js';
@@ -40,6 +41,20 @@ const GAME_MODULE_MAP = {
 
   const { uid, profile } = session;
   const sessionId = await getActiveSessionId();
+
+  // Game ban check — banned players see a soft restriction notice; no redirect
+  const ban = await checkGameBan(uid);
+  if (ban.is_banned) {
+    hideSpinner();
+    document.getElementById('game-container').innerHTML = `
+      <div class="result-card result-card--fail" style="margin:16px">
+        <div class="result-card__icon">🚫</div>
+        <h2>Gameplay Restricted</h2>
+        <p>Your account is restricted from gameplay actions for this event.</p>
+        <a class="btn btn--primary" href="/game.html">Back to Game</a>
+      </div>`;
+    return;
+  }
 
   const task = await getTask(taskId);
   if (!task) {

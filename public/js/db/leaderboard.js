@@ -23,6 +23,7 @@ async function fetchLeaderboard(sessionId = null) {
   const { data } = await sb
     .from('users')
     .select('id, full_name, team_name, score, tasks_completed')
+    .eq('is_game_banned', false)
     .order('score', { ascending: false })
     .limit(LIMIT);
   return (data || []).map((u) => ({ ...u, tasks_completed: (u.tasks_completed || []).length }));

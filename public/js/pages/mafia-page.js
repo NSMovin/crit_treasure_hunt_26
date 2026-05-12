@@ -9,6 +9,7 @@ import { getGameState, getActiveSessionId,
 import { getMyRole, getLastAttackTime,
          submitAttack, getMafiaFeed,
          onMyRoleChange }                        from '/js/db/mafia.js';
+import { checkGameBan }                          from '/js/db/moderation.js';
 import { showToast, showSpinner,
          hideSpinner, escapeHTML }               from '/js/ui.js';
 
@@ -23,7 +24,21 @@ const unsubs = [];
 
   showSpinner();
   try {
-    const [gs, sessionId] = await Promise.all([getGameState(), getActiveSessionId()]);
+    const [gs, sessionId, ban] = await Promise.all([
+      getGameState(),
+      getActiveSessionId(),
+      checkGameBan(uid)
+    ]);
+
+    if (ban.is_banned) {
+      document.getElementById('content').innerHTML = `
+        <div class="mafia__inactive empty-state">
+          <div class="mafia__icon">🚫</div>
+          <h2>Gameplay Restricted</h2>
+          <p>Your account is restricted from gameplay actions for this event.</p>
+        </div>`;
+      return;
+    }
 
     if (!gs?.mafia_active) {
       renderInactive();

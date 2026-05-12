@@ -7,6 +7,7 @@ import { requirePlayer }                        from '/js/router.js';
 import { getActiveSessionId, onGameStateChange } from '/js/db/game-state.js';
 import { getPhotoSubmissions, getMyVote,
          castVote, onPhotoVotesChange }          from '/js/db/photo-votes.js';
+import { checkGameBan }                          from '/js/db/moderation.js';
 import { showToast, escapeHTML }                 from '/js/ui.js';
 
 let _uid        = null;
@@ -145,6 +146,13 @@ function cardHTML(s) {
 async function handleVote(attemptId) {
   if (!_sessionId) { showToast('No active session.', 'error'); return; }
   if (_myVote !== null) { showToast('You have already voted.', 'warning'); return; }
+
+  // Game ban check — server RLS will also block the insert
+  const ban = await checkGameBan(_uid);
+  if (ban.is_banned) {
+    showToast('Your account is restricted from gameplay actions for this event.', 'warning', 4000);
+    return;
+  }
 
   const { error } = await castVote(_uid, attemptId, _sessionId);
   if (error) {
