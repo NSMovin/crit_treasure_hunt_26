@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getActiveSessionId }              from '/js/db/game-state.js';
-import { getTasks }                        from '/js/db/tasks.js';
+import { getAllTasks }                      from '/js/db/tasks.js';
 import { adminGetTribeState,
          adminResetTribe }                 from '/js/db/tribe-finder.js';
 import { showToast, showSpinner,
@@ -16,7 +16,7 @@ export async function renderTribeFinderManager(container, _unsubs) {
   try {
     [sessionId, tasks] = await Promise.all([
       getActiveSessionId(),
-      getTasks()
+      getAllTasks()
     ]);
   } finally {
     hideSpinner();
@@ -132,7 +132,7 @@ async function renderPanel(container, sessionId, tribeTasks) {
       try {
         await adminResetTribe(taskId, sessionId);
         showToast('Tribe assignments reset.', 'success');
-        const tasks = await getTasks();
+        const tasks = await getAllTasks();
         const tribeTasks = (tasks || []).filter((t) => t.type === 'tribe_finder');
         await renderPanel(container, sessionId, tribeTasks);
       } catch (e) {
