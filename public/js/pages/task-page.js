@@ -21,7 +21,8 @@ const GAME_MODULE_MAP = {
   fast_tap:     '/js/games/fast-tap.js',
   puzzle:       '/js/games/puzzle.js',
   photo:        '/js/games/photo-challenge.js',
-  arrow_hunt:   '/js/games/arrow-hunt.js'
+  arrow_hunt:   '/js/games/arrow-hunt.js',
+  tribe_finder: '/js/games/tribe-finder.js'
 };
 
 (async function init() {

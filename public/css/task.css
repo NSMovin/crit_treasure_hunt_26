@@ -249,3 +249,61 @@
 .ah-corner--tr { top: 14px;    right: 14px; border-top: 1px solid #f0c040; border-right: 1px solid #f0c040; }
 .ah-corner--bl { bottom: 14px; left: 14px;  border-bottom: 1px solid #f0c040; border-left: 1px solid #f0c040; }
 .ah-corner--br { bottom: 14px; right: 14px; border-bottom: 1px solid #f0c040; border-right: 1px solid #f0c040; }
+
+/* ── TRIBE FINDER ────────────────────────────────────────────────────────────── */
+.tf__wrap    { padding: var(--sp-md); display: flex; flex-direction: column; gap: var(--sp-md); }
+.tf__loading { display: flex; flex-direction: column; align-items: center; gap: var(--sp-md); padding: var(--sp-lg) 0; color: var(--clr-text-muted); }
+.tf__error   { color: var(--clr-error); padding: var(--sp-md); }
+
+/* Tribe card */
+.tf__tribe-card {
+  background:    linear-gradient(135deg, #1e1a2e 0%, #2a2040 100%);
+  border:        2px solid var(--clr-accent);
+  border-radius: var(--radius-md);
+  padding:       var(--sp-lg) var(--sp-md);
+  text-align:    center;
+  box-shadow:    0 4px 20px rgba(108,60,225,0.2);
+}
+.tf__tribe-card--done { opacity: 0.7; }
+.tf__tribe-icon    { font-size: 40px; line-height: 1; margin-bottom: var(--sp-sm); }
+.tf__tribe-eyebrow { font-size: var(--font-sz-sm); letter-spacing: 3px; text-transform: uppercase; color: var(--clr-text-muted); margin-bottom: var(--sp-xs); }
+.tf__tribe-label   { font-size: 2rem; font-weight: 800; color: var(--clr-accent); letter-spacing: 1px; }
+
+/* Mission text */
+.tf__mission      { font-size: var(--font-sz-sm); color: var(--clr-text-muted); line-height: 1.6; display: flex; flex-direction: column; gap: var(--sp-xs); }
+.tf__mission strong { color: var(--clr-text); }
+.tf__mission-hint { color: var(--clr-text-muted); font-style: italic; }
+
+/* Inputs */
+.tf__inputs    { display: flex; flex-direction: column; gap: var(--sp-sm); }
+.tf__input-row { display: flex; flex-direction: column; gap: 4px; }
+.tf__input-label { font-size: var(--font-sz-sm); color: var(--clr-text-muted); font-weight: 600; }
+
+/* Cooldown + result */
+.tf__cooldown { font-size: var(--font-sz-sm); color: var(--clr-warning, #f0a040); font-family: monospace; text-align: center; padding: var(--sp-sm); background: rgba(240,160,64,0.08); border-radius: var(--radius-sm); }
+.tf__result   { font-size: var(--font-sz-sm); padding: var(--sp-sm) var(--sp-md); border-radius: var(--radius-sm); text-align: center; }
+.tf__result--error { color: var(--clr-error);   background: rgba(231,76,60,0.08);  }
+.tf__result--info  { color: var(--clr-text-muted); }
+.tf__submit-btn    { width: 100%; }
+.tf__hidden        { display: none !important; }
+
+/* Success overlay */
+.tf__success-overlay {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  justify-content: center;
+  gap:            var(--sp-sm);
+  padding:        var(--sp-lg) var(--sp-md);
+  text-align:     center;
+  animation:      tf-fade-in 0.4s ease;
+}
+.tf__success-icon  { font-size: 56px; }
+.tf__success-title { font-size: 1.6rem; font-weight: 800; color: var(--clr-success, #27ae60); }
+.tf__success-label { font-size: 1.2rem; font-weight: 700; color: var(--clr-accent); }
+.tf__success-sub   { color: var(--clr-text-muted); font-size: var(--font-sz-sm); }
+
+@keyframes tf-fade-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}

@@ -662,3 +662,249 @@ END $$;
 
 ALTER TABLE tasks ADD CONSTRAINT tasks_type_check
   CHECK (type IN ('quiz','memory_match','fast_tap','puzzle','photo','arrow_hunt'));
+
+
+-- ============================================================
+-- MIGRATION v9: Add tribe_finder task type
+-- ============================================================
+
+-- Tables
+CREATE TABLE IF NOT EXISTS tribe_assignments (
+  id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id      UUID   NOT NULL REFERENCES users(id)          ON DELETE CASCADE,
+  task_id      TEXT   NOT NULL REFERENCES tasks(task_id)     ON DELETE CASCADE,
+  session_id   BIGINT NOT NULL REFERENCES game_sessions(id)  ON DELETE CASCADE,
+  tribe_label  TEXT   NOT NULL,
+  completed_at TIMESTAMPTZ,
+  assigned_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, task_id, session_id)
+);
+
+CREATE TABLE IF NOT EXISTS tribe_submissions (
+  id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  submitter_id  UUID   NOT NULL REFERENCES users(id)          ON DELETE CASCADE,
+  task_id       TEXT   NOT NULL REFERENCES tasks(task_id)     ON DELETE CASCADE,
+  session_id    BIGINT NOT NULL REFERENCES game_sessions(id)  ON DELETE CASCADE,
+  submitted_ids JSONB  NOT NULL,
+  success       BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_tribe_assignments_session   ON tribe_assignments (session_id);
+CREATE INDEX IF NOT EXISTS idx_tribe_assignments_user      ON tribe_assignments (user_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_tribe_assignments_task      ON tribe_assignments (task_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_tribe_submissions_submitter ON tribe_submissions (submitter_id, task_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_tribe_submissions_created   ON tribe_submissions (created_at DESC);
+
+-- RLS
+ALTER TABLE tribe_assignments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tribe_assignments_read_own" ON tribe_assignments
+  FOR SELECT USING (auth.uid() = user_id);
+
+ALTER TABLE tribe_submissions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tribe_submissions_read_own" ON tribe_submissions
+  FOR SELECT USING (auth.uid() = submitter_id);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE tribe_assignments;
+
+-- Update CHECK constraint to include tribe_finder
+DO $$
+DECLARE v_conname text;
+BEGIN
+  SELECT c.conname INTO v_conname
+  FROM pg_constraint c JOIN pg_class t ON c.conrelid = t.oid
+  WHERE t.relname = 'tasks' AND c.contype = 'c'
+    AND pg_get_constraintdef(c.oid) LIKE '%type%';
+  IF v_conname IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE tasks DROP CONSTRAINT ' || quote_ident(v_conname);
+  END IF;
+END $$;
+
+ALTER TABLE tasks ADD CONSTRAINT tasks_type_check
+  CHECK (type IN ('quiz','memory_match','fast_tap','puzzle','photo','arrow_hunt','tribe_finder'));
+
+-- RPC 1: get_or_assign_tribe
+CREATE OR REPLACE FUNCTION get_or_assign_tribe(p_task_id TEXT, p_session_id BIGINT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_caller      UUID := auth.uid();
+  v_existing    tribe_assignments%ROWTYPE;
+  v_config      JSONB;
+  v_tribe_size  INT;
+  v_labels      TEXT[];
+  v_label       TEXT;
+  v_counts      RECORD;
+  v_best_label  TEXT;
+  v_best_count  INT := 9999;
+  v_cooldown    INT := 0;
+  v_last_fail   TIMESTAMPTZ;
+  v_cool_mins   INT;
+BEGIN
+  IF v_caller IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+  -- Return existing assignment if present
+  SELECT * INTO v_existing
+  FROM tribe_assignments
+  WHERE user_id = v_caller AND task_id = p_task_id AND session_id = p_session_id;
+
+  IF FOUND THEN
+    SELECT config INTO v_config FROM tasks WHERE task_id = p_task_id;
+    v_cool_mins := COALESCE((v_config->>'cooldown_minutes')::INT, 2);
+    SELECT MAX(created_at) INTO v_last_fail
+    FROM tribe_submissions
+    WHERE submitter_id = v_caller AND task_id = p_task_id AND session_id = p_session_id AND success = FALSE;
+    IF v_last_fail IS NOT NULL THEN
+      v_cooldown := GREATEST(0, v_cool_mins * 60 - EXTRACT(EPOCH FROM (NOW() - v_last_fail))::INT);
+    END IF;
+    RETURN jsonb_build_object(
+      'tribe_label',      v_existing.tribe_label,
+      'completed_at',     v_existing.completed_at,
+      'tribe_size',       COALESCE((v_config->>'tribe_size')::INT, 4),
+      'cooldown_seconds', v_cooldown
+    );
+  END IF;
+
+  -- Verify task exists and is active tribe_finder
+  SELECT config INTO v_config FROM tasks WHERE task_id = p_task_id AND active = TRUE AND type = 'tribe_finder';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Task not available'; END IF;
+
+  v_tribe_size := COALESCE((v_config->>'tribe_size')::INT, 4);
+  SELECT ARRAY(SELECT jsonb_array_elements_text(
+    COALESCE(v_config->'tribe_labels', '["Phoenix","Kraken","Titan","Nova","Shadow","Eclipse"]'::jsonb)
+  )) INTO v_labels;
+
+  -- Find label with fewest members (tie-break: first in list)
+  FOREACH v_label IN ARRAY v_labels LOOP
+    SELECT COUNT(*) INTO v_counts
+    FROM tribe_assignments
+    WHERE task_id = p_task_id AND session_id = p_session_id AND tribe_label = v_label;
+    IF v_counts.count < v_best_count THEN
+      v_best_count := v_counts.count;
+      v_best_label := v_label;
+    END IF;
+  END LOOP;
+
+  INSERT INTO tribe_assignments (user_id, task_id, session_id, tribe_label)
+  VALUES (v_caller, p_task_id, p_session_id, v_best_label)
+  ON CONFLICT DO NOTHING;
+
+  -- Re-select in case of race
+  SELECT * INTO v_existing
+  FROM tribe_assignments
+  WHERE user_id = v_caller AND task_id = p_task_id AND session_id = p_session_id;
+
+  RETURN jsonb_build_object(
+    'tribe_label',      v_existing.tribe_label,
+    'completed_at',     v_existing.completed_at,
+    'tribe_size',       v_tribe_size,
+    'cooldown_seconds', 0
+  );
+END;
+$$;
+
+-- RPC 2: submit_tribe_group
+CREATE OR REPLACE FUNCTION submit_tribe_group(
+  p_task_id          TEXT,
+  p_session_id       BIGINT,
+  p_member_student_ids TEXT[]
+)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_caller      UUID := auth.uid();
+  v_assignment  tribe_assignments%ROWTYPE;
+  v_config      JSONB;
+  v_tribe_size  INT;
+  v_cool_mins   INT;
+  v_last_fail   TIMESTAMPTZ;
+  v_cooldown    INT;
+  v_sid         TEXT;
+  v_member_uid  UUID;
+  v_member_asgn tribe_assignments%ROWTYPE;
+  v_all_valid   BOOLEAN := TRUE;
+  v_member_ids  UUID[] := '{}';
+BEGIN
+  IF v_caller IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+  -- Fetch caller assignment
+  SELECT * INTO v_assignment
+  FROM tribe_assignments
+  WHERE user_id = v_caller AND task_id = p_task_id AND session_id = p_session_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Not assigned to this task'; END IF;
+  IF v_assignment.completed_at IS NOT NULL THEN RAISE EXCEPTION 'Already completed'; END IF;
+
+  -- Cooldown check
+  SELECT config INTO v_config FROM tasks WHERE task_id = p_task_id;
+  v_cool_mins := COALESCE((v_config->>'cooldown_minutes')::INT, 2);
+  SELECT MAX(created_at) INTO v_last_fail
+  FROM tribe_submissions
+  WHERE submitter_id = v_caller AND task_id = p_task_id AND session_id = p_session_id AND success = FALSE;
+  IF v_last_fail IS NOT NULL THEN
+    v_cooldown := GREATEST(0, v_cool_mins * 60 - EXTRACT(EPOCH FROM (NOW() - v_last_fail))::INT);
+    IF v_cooldown > 0 THEN
+      RETURN jsonb_build_object('success', FALSE, 'outcome', 'cooldown', 'cooldown_seconds', v_cooldown, 'points_delta', 0);
+    END IF;
+  END IF;
+
+  -- Validate count
+  v_tribe_size := COALESCE((v_config->>'tribe_size')::INT, 4);
+  IF array_length(p_member_student_ids, 1) IS DISTINCT FROM (v_tribe_size - 1) THEN
+    RAISE EXCEPTION 'Wrong number of members';
+  END IF;
+
+  -- Validate each submitted student ID
+  FOREACH v_sid IN ARRAY p_member_student_ids LOOP
+    SELECT id INTO v_member_uid FROM users WHERE student_id = v_sid;
+    IF NOT FOUND THEN v_all_valid := FALSE; EXIT; END IF;
+    IF v_member_uid = v_caller THEN v_all_valid := FALSE; EXIT; END IF;
+    SELECT * INTO v_member_asgn
+    FROM tribe_assignments
+    WHERE user_id = v_member_uid AND task_id = p_task_id AND session_id = p_session_id
+      AND tribe_label = v_assignment.tribe_label AND completed_at IS NULL;
+    IF NOT FOUND THEN v_all_valid := FALSE; EXIT; END IF;
+    v_member_ids := array_append(v_member_ids, v_member_uid);
+  END LOOP;
+
+  IF NOT v_all_valid THEN
+    -- Record failed attempt and deduct points
+    INSERT INTO tribe_submissions (submitter_id, task_id, session_id, submitted_ids, success)
+    VALUES (v_caller, p_task_id, p_session_id, to_jsonb(p_member_student_ids), FALSE);
+    UPDATE users SET score = GREATEST(0, score - 50) WHERE id = v_caller;
+    UPDATE session_scores SET score = GREATEST(0, score - 50)
+    WHERE user_id = v_caller AND session_id = p_session_id;
+    RETURN jsonb_build_object(
+      'success', FALSE, 'outcome', 'wrong_group',
+      'cooldown_seconds', v_cool_mins * 60, 'points_delta', -50
+    );
+  END IF;
+
+  -- Mark caller + all members as completed
+  UPDATE tribe_assignments SET completed_at = NOW()
+  WHERE task_id = p_task_id AND session_id = p_session_id
+    AND (user_id = v_caller OR user_id = ANY(v_member_ids));
+
+  INSERT INTO tribe_submissions (submitter_id, task_id, session_id, submitted_ids, success)
+  VALUES (v_caller, p_task_id, p_session_id, to_jsonb(p_member_student_ids), TRUE);
+
+  RETURN jsonb_build_object('success', TRUE, 'outcome', 'tribe_found', 'cooldown_seconds', 0, 'points_delta', 0);
+END;
+$$;
+
+-- RPC 3: admin_get_tribe_state
+CREATE OR REPLACE FUNCTION admin_get_tribe_state(p_task_id TEXT, p_session_id BIGINT)
+RETURNS TABLE (user_id UUID, full_name TEXT, student_id TEXT, tribe_label TEXT, completed_at TIMESTAMPTZ, assigned_at TIMESTAMPTZ)
+LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT ta.user_id, u.full_name, u.student_id, ta.tribe_label, ta.completed_at, ta.assigned_at
+  FROM tribe_assignments ta JOIN users u ON ta.user_id = u.id
+  WHERE ta.task_id = p_task_id AND ta.session_id = p_session_id
+  ORDER BY ta.tribe_label, ta.completed_at DESC NULLS LAST;
+$$;
+
+-- RPC 4: admin_reset_tribe
+CREATE OR REPLACE FUNCTION admin_reset_tribe(p_task_id TEXT, p_session_id BIGINT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  DELETE FROM tribe_submissions WHERE task_id = p_task_id AND session_id = p_session_id;
+  DELETE FROM tribe_assignments  WHERE task_id = p_task_id AND session_id = p_session_id;
+END;
+$$;
