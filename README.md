@@ -66,7 +66,8 @@ crit_treasure_hunt_26/
         │   ├── game-sessions.js
         │   ├── unlocked-tasks.js
         │   ├── photo-votes.js
-        │   └── mafia.js
+        │   ├── mafia.js
+        │   └── tribe-finder.js  # DB layer for tribe_finder task type
         │
         ├── games/               # Mini-game implementations
         │   ├── quiz.js
@@ -74,7 +75,8 @@ crit_treasure_hunt_26/
         │   ├── fast-tap.js
         │   ├── puzzle.js
         │   ├── photo-challenge.js
-        │   └── arrow-hunt.js    # Rotating log — stick all arrows without overlap
+        │   ├── arrow-hunt.js    # Rotating log — stick all arrows without overlap
+        │   └── tribe-finder.js  # Social deduction — find your hidden tribe members
         │
         ├── pages/               # Page-level controllers
         │   ├── index-page.js
@@ -93,7 +95,8 @@ crit_treasure_hunt_26/
             ├── hint-manager.js
             ├── session-manager.js
             ├── voting-manager.js
-            └── mafia-manager.js
+            ├── mafia-manager.js
+            └── tribe-finder-manager.js  # Admin view: tribe distribution + reset
 ```
 
 ---
@@ -338,6 +341,58 @@ Players scan the QR code → the task unlocks → they are taken to the game. Co
 
 To increase difficulty: raise `target_rotation_speed`, lower `collision_tolerance`, or increase `arrow_count`. To make it easier: lower speed, raise tolerance, or reduce arrow count.
 
+### Tribe Finder
+
+A social deduction task. Players are secretly assigned to hidden tribes and must physically talk to other participants to figure out who shares their tribe. When a player believes they have found all their tribe members, they submit everyone's student IDs for server-side validation.
+
+```json
+{
+  "tribe_size": 4,
+  "tribe_labels": ["Phoenix", "Kraken", "Titan", "Nova", "Shadow", "Eclipse"],
+  "cooldown_minutes": 2
+}
+```
+
+All fields are optional — omit the config entirely (`{}`) to use the defaults above.
+
+| Field | Default | Effect |
+|-------|---------|--------|
+| `tribe_size` | `4` | Total number of players per tribe, including the submitter |
+| `tribe_labels` | 6 labels (Phoenix … Eclipse) | Names players see on their tribe card |
+| `cooldown_minutes` | `2` | Minutes a player must wait after a wrong submission before trying again |
+
+**How it works:**
+
+1. A player scans the QR code and reaches the task page
+2. The server assigns them to the tribe with the fewest current members (race-safe)
+3. The player sees their tribe name and a mission briefing — but **not** who else is in their tribe
+4. They must find `tribe_size - 1` other participants in real life and ask for their student IDs
+5. They enter those student IDs and submit
+6. The server validates that every submitted ID belongs to a player in the **same tribe** for this task and session
+7. **Wrong group** → −50 pts applied immediately, `cooldown_minutes` wait before next attempt
+8. **Correct group** → all matched players are marked completed; standard scoring applies (base points + speed bonus + first-solver bonus)
+
+Players who are matched by someone else's correct submission are also marked completed — they do not need to submit separately.
+
+**Scoring note:** Wrong-attempt penalties are applied live by the server RPC (not via the standard `calculateScore` formula). The `onComplete` callback always passes `wrongAttempts: 0` to avoid double-penalising.
+
+#### How to add a Tribe Finder task (admin steps)
+
+1. Open **Admin → Tasks** → **+ New Task**
+2. Set **Task ID** to a slug like `task-tribe-01`
+3. Set **Title** (e.g. "Find Your Tribe") and **Description** (shown above the game as flavour text)
+4. Set **Type** to `tribe_finder`
+5. Set **Points** — suggested 150 for a social task of this difficulty
+6. In **Config JSON**, paste the block above, or use `{}` for defaults
+7. Leave **Time Limit** blank (no countdown pressure) or set one if you want urgency
+8. Set **Active = true** when ready for players
+9. Print a QR code pointing to:
+   `https://your-project.vercel.app/unlock.html?task=<task_id>`
+
+For a quick test during setup, use `"tribe_size": 2` — only one other student ID is needed, so you can test with two browser sessions on two phones.
+
+To monitor progress during the event: **Admin → 🏕️ Tribe Finder** shows every player's assigned tribe, completion status, and when they were assigned. Use the **Reset** button on any task to clear all assignments and start fresh.
+
 ---
 
 ## Scoring Formula
@@ -391,7 +446,7 @@ Configurable in `public/js/app-settings.js → voting`. Ties share the same podi
 | task_id | TEXT PK | Human-readable slug |
 | title | TEXT | |
 | description | TEXT | Riddle text / instructions |
-| type | TEXT | quiz / memory_match / fast_tap / puzzle / photo / arrow_hunt |
+| type | TEXT | quiz / memory_match / fast_tap / puzzle / photo / arrow_hunt / tribe_finder |
 | points | INTEGER | Base points |
 | time_limit_sec | INTEGER | NULL = no timer |
 | hint | TEXT | Empty until released |
@@ -461,6 +516,32 @@ UNIQUE constraint on `(voter_user_id, session_id)` — one vote per player per s
 
 UNIQUE constraint on `(user_id, session_id)`. RLS: each player can only read their own row — other roles are never exposed to players.
 
+### `tribe_assignments`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT | Auto-generated |
+| user_id | UUID | References users.id |
+| task_id | TEXT | References tasks.task_id |
+| session_id | BIGINT | References game_sessions.id |
+| tribe_label | TEXT | The tribe this player belongs to for this task |
+| completed_at | TIMESTAMPTZ | Set when the player's group is correctly validated |
+| assigned_at | TIMESTAMPTZ | When the assignment was made |
+
+UNIQUE constraint on `(user_id, task_id, session_id)` — one assignment per player per task per session. RLS: each player can only read their own row.
+
+### `tribe_submissions`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT | Auto-generated |
+| submitter_id | UUID | Who submitted |
+| task_id | TEXT | References tasks.task_id |
+| session_id | BIGINT | References game_sessions.id |
+| submitted_ids | JSONB | Array of student ID strings that were submitted |
+| success | BOOLEAN | True if the submission was correct |
+| created_at | TIMESTAMPTZ | Used for cooldown enforcement |
+
+RLS: each player can only read their own submission rows (used for cooldown display). The `submit_tribe_group` RPC reads `MAX(created_at) WHERE success = FALSE` to enforce the cooldown server-side.
+
 ### `mafia_actions`
 | Column | Type | Notes |
 |--------|------|-------|
@@ -472,6 +553,82 @@ UNIQUE constraint on `(user_id, session_id)`. RLS: each player can only read the
 | created_at | TIMESTAMPTZ | Used for 15-minute cooldown enforcement |
 
 RLS: players can only read their own attack rows (used for cooldown display). The anonymous event feed is served via a SECURITY DEFINER RPC that strips identities.
+
+---
+
+## Tribe Finder Task
+
+Tribe Finder is a **task type** (not a side-game). It appears in the task list alongside quiz, puzzle, and arrow hunt — players reach it by scanning a QR code, and completing it earns points that go directly onto the leaderboard. The mechanic is social: players cannot complete it alone.
+
+### Concept
+
+When a player reaches the Tribe Finder task, the server secretly assigns them to one of several named tribes. They can see their own tribe name, but they have no idea who else is in it. To complete the task they must:
+
+1. Walk around and ask other participants: *"What tribe are you in?"*
+2. Collect the student IDs of everyone they believe is in their tribe
+3. Submit those IDs — if correct, everyone in that group is marked as complete
+
+Because tribes are assigned at first access (not pre-loaded), the social interaction is the mechanic. Players genuinely do not know who their tribe members are until they start talking.
+
+### How Assignment Works
+
+Tribes are filled greedily — each new player is assigned to the tribe with the fewest current members. Tie-break goes to the first tribe in the `tribe_labels` list. The assignment is race-safe (`INSERT ... ON CONFLICT DO NOTHING` + re-select).
+
+With the default config (`tribe_size: 4`, 6 tribes) and 80 participants, you get roughly 20 tribes of 4. Adjust `tribe_size` and `tribe_labels` to control group sizes.
+
+### Submission and Validation
+
+The player enters `tribe_size - 1` student IDs (everyone except themselves). The `submit_tribe_group` server RPC checks:
+
+- Every submitted student ID maps to a real user
+- None of the submitted IDs is the submitter's own
+- Every submitted user has a `tribe_assignments` row for the same task, session, **and tribe label**
+- Every submitted user's assignment is not already completed (prevents a player from being claimed twice)
+
+If all checks pass → all matched players (submitter + submitted) are marked `completed_at = NOW()`. The submitter's `onComplete({ correct: true })` fires and `task-page.js` runs the standard scoring formula.
+
+### Scoring
+
+| Outcome | How it works |
+|---------|-------------|
+| Correct group | Standard scoring: base points + speed bonus + first-solver bonus |
+| Wrong group | −50 pts applied immediately via server RPC; `cooldown_minutes` wait |
+| Already completed (entered via URL after finishing) | Task-page guard redirects; no double award |
+
+Wrong-attempt penalties are deducted live by the server (same pattern as Mafia Hunt attacks). The `wrongAttempts: 0` value passed to `onComplete` prevents the `calculateScore` formula from also deducting — there is no double penalty.
+
+### The Cooldown
+
+After a wrong submission the player must wait `cooldown_minutes` (default 2) before submitting again. The countdown is displayed on the task page and updates every second. Enforcement is server-side — the RPC checks `MAX(created_at) WHERE success = FALSE` against wall-clock time. If a player refreshes mid-cooldown, the remaining time is fetched from the server on mount and the countdown resumes correctly.
+
+### What Happens to Players Who Are Found
+
+When a correct submission comes in, **all players in that group** — submitter and everyone they named — are marked `completed_at`. A player who was found by someone else will see an already-completed notice if they later scan the QR code themselves. They still receive full credit: the `hasCompletedTask` guard in `task-page.js` detects the completed state and shows a success toast rather than re-running the game.
+
+Players who were found cannot submit again (the `completed_at IS NOT NULL` check in the RPC raises an exception).
+
+### Admin Controls — Admin → 🏕️ Tribe Finder
+
+The Tribe Finder panel shows live state for every `tribe_finder` task in the active session.
+
+| Section | What It Shows |
+|---------|--------------|
+| Tribe Distribution table | Each tribe label, number of players assigned, number completed |
+| All Players table | Name, student ID, tribe, status (🔍 Searching / ✅ Found), assigned time |
+| Reset button | Clears all `tribe_assignments` and `tribe_submissions` for that task — use to start fresh |
+
+There are no Start/End buttons. Tribe Finder activates and deactivates via the standard `tasks.active` toggle in the Tasks panel, consistent with all other task types.
+
+### Security
+
+All rules are enforced inside the `submit_tribe_group` and `get_or_assign_tribe` SECURITY DEFINER RPCs:
+
+- **Identity guard** — `auth.uid()` is read server-side; the client cannot claim to be another user
+- **Cooldown** — server wall-clock check; refreshing the page does not reset it
+- **Self-submission** — rejected if any submitted ID resolves to `auth.uid()`
+- **Cross-tribe submission** — rejected if any submitted user's `tribe_label` differs from the submitter's
+- **Already-completed guard** — rejected if the submitter's `completed_at IS NOT NULL`
+- **Race-safe assignment** — `INSERT ... ON CONFLICT DO NOTHING` followed by re-select
 
 ---
 
@@ -776,6 +933,41 @@ Game behaviour:
 - All arrows placed without collision → `onComplete({ correct: true, timeTakenSec, wrongAttempts, score })` — standard scoring formula applies
 - `startTime` is set once when the game begins and is never reset on internal retries, so `timeTakenSec` covers the full attempt including any retries
 - Full cleanup on exit: `cancelAnimationFrame`, event listener removal, score popup DOM cleanup
+
+---
+
+## update 13/5/26 — Tribe Finder task type
+
+New files:
+
+- `public/js/games/tribe-finder.js` — game module: assignment fetch on mount, tribe card display, `tribe_size - 1` student ID inputs, wrong-attempt cooldown countdown, success overlay, `export async function run(task, container, onComplete)`
+- `public/js/db/tribe-finder.js` — DB layer: `getOrAssignTribe`, `submitTribeGroup`, `adminGetTribeState`, `adminResetTribe` (all call SECURITY DEFINER RPCs)
+- `public/js/admin/tribe-finder-manager.js` — admin panel: tribe distribution table, full player table, per-task reset button
+
+Modified files:
+
+- `public/css/task.css` — Tribe Finder styles appended with `.tf__*` namespace
+- `public/js/pages/task-page.js` — `tribe_finder: '/js/games/tribe-finder.js'` added to `GAME_MODULE_MAP`
+- `public/js/admin/task-manager.js` — `'tribe_finder'` added to `TASK_TYPES` (shows in type dropdown)
+- `public/js/pages/admin-page.js` — `'tribe-finder'` tab added, `case 'tribe-finder':` lazy import in `loadPanel`, `tabLabel` entry added
+- `supabase-schema.sql` — MIGRATION v9 block appended
+
+Database changes (applied live):
+
+- `tribe_assignments` table — one row per player per task per session; UNIQUE `(user_id, task_id, session_id)`; RLS enabled (own row only); added to `supabase_realtime` publication
+- `tribe_submissions` table — submission audit trail; RLS enabled (own rows only)
+- `get_or_assign_tribe(task_id, session_id)` — SECURITY DEFINER; returns or creates tribe assignment; race-safe via `ON CONFLICT DO NOTHING`; returns cooldown remaining from last failed submission
+- `submit_tribe_group(task_id, session_id, member_student_ids[])` — SECURITY DEFINER; validates all submitted IDs share the same tribe label; on wrong: deducts −50 pts via direct SQL + returns cooldown; on correct: marks all matched players `completed_at`
+- `admin_get_tribe_state(task_id, session_id)` — returns full assignment table joined with user names for admin panel
+- `admin_reset_tribe(task_id, session_id)` — deletes all assignments and submissions for the given task and session
+- `tasks` CHECK constraint on `type` dropped and recreated to include `'tribe_finder'`
+
+Game behaviour:
+
+- Assignment is made on first access (not pre-loaded); tribe is kept secret until the player tells others themselves
+- Wrong submission deducts points immediately server-side and starts a cooldown; player waits before retrying
+- Correct submission marks submitter and all named members as completed in one RPC call
+- Players found by others see an already-completed notice on re-entry; no double award
 
 ---
 
