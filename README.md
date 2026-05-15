@@ -82,7 +82,7 @@ Three environment variables are required. Copy `.env.example` to `.env` and fill
 | `VITE_SUPABASE_ANON_KEY` | Your Supabase anon/public key — find in Project Settings → API |
 | `VITE_ADMIN_PASSCODE` | Passcode for the `/admin.html` dashboard — keep strong and private |
 
-> **Note on the anon key:** Supabase anon keys are intentionally public — they identify your project, not your identity. Row-Level Security policies enforce what anonymous users can and cannot access. Do **not** confuse the anon key with the service_role key; the service_role key bypasses all RLS and must never be in frontend code.
+> **Note on the anon key:** Supabase anon keys are intentionally public — they identify this project. Row-Level Security policies enforce what anonymous users can and cannot access. Do **not** confuse the anon key with the service_role key; the service_role key bypasses all RLS and must never be in frontend code.
 
 ---
 
