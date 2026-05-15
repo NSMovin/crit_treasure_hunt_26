@@ -615,9 +615,10 @@ for name in ['users', 'tasks', 'attempts', 'session_scores']:
 
 | Name | Role |
 |---|---|
-| — | Lead Developer |
+| Naeem Shovon Shuvro (261035005) | Lead Developer |
+| Shovon Chowdhury (261035044) | Lead Developer |
 | — | UI / UX Design |
-| — | Event Coordination |
+| Mahbub Alam Masum (261035004) | Event Coordination |
 | — | QA / Testing |
 
 ---
