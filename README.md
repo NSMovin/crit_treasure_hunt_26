@@ -617,9 +617,19 @@ for name in ['users', 'tasks', 'attempts', 'session_scores']:
 |---|---|
 | Naeem Shovon Shuvro (261035005) | Lead Developer |
 | Shovon Chowdhury (261035044) | Lead Developer |
-| — | UI / UX Design |
+| Naeem Shovon Shuvro
+Shovan Chowdhury
+Sanjida Koyel
+Minha Tasnim 
+Mahbub Alam Masum | Game Design |
+| Naeem Shovon Shuvro & Shovon Chowdhury | UI / UX Design |
 | Mahbub Alam Masum (261035004) | Event Coordination |
-| — | QA / Testing |
+| Tanzil Ahmed Bhuiyan (261035003)
+Sanjida Koyel (261035***)
+Minha Tasnim (261035***)
+MD.Rafi Alam Khan (261035***)
+MD Saifuddin (261035***)
+ | QA / Testing |
 
 ---
 
