@@ -10,9 +10,9 @@ export const APP_SETTINGS = {
   eventDate: '2026-05-13',             // Display only
 
   // ── Admin ──────────────────────────────────────────────────────────────────
-  // Change this to a strong passcode before your event.
-  // Keep the /admin.html URL private — this passcode is the only gate.
-  adminPasscode: 'admin123',
+  // Set via VITE_ADMIN_PASSCODE environment variable.
+  // Local dev: add to .env. Production: set in Vercel project dashboard.
+  adminPasscode: import.meta.env.VITE_ADMIN_PASSCODE,
 
   // ── Scoring ────────────────────────────────────────────────────────────────
   scoring: {

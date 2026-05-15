@@ -16,6 +16,9 @@ import { uploadPhoto }                              from '/js/storage.js';
 import { showToast, showSpinner, hideSpinner,
          escapeHTML, formatCountdown }              from '/js/ui.js';
 
+// import.meta.glob lets Vite statically analyze all game modules at build time.
+// Keys in GAME_MODULE_MAP must match the glob pattern so Vite resolves lazy chunks.
+const _gameGlob = import.meta.glob('/js/games/*.js');
 const GAME_MODULE_MAP = {
   quiz:         '/js/games/quiz.js',
   memory_match: '/js/games/memory-match.js',
@@ -101,7 +104,7 @@ const GAME_MODULE_MAP = {
   }
 
   const container = document.getElementById('game-container');
-  const { run }   = await import(modulePath);
+  const { run }   = await _gameGlob[modulePath]();
   run(task, container, (result) => handleCompletion(result, task, uid, profile, sessionId));
 })().catch((err) => {
   console.error('task-page init error:', err);

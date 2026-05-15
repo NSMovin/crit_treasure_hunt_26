@@ -3,12 +3,12 @@
 // Single source of truth for Supabase initialization.
 // All other modules import { sb } from here.
 //
-// SETUP: Replace SUPABASE_URL and SUPABASE_ANON_KEY with your project values.
-// Find them in: Supabase Dashboard → Project Settings → API
+// Values come from environment variables set in .env (local dev) or in the
+// Vercel project dashboard (production). See .env.example for setup.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL      = 'https://ijwssdalkpxklyvchcsw.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_xTprfgd2a9JWqKJa3x7FtQ_DI2Nsj0C';
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // window.supabase is set by the CDN <script> tag loaded before this ES module.
 export const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {

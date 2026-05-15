@@ -1,5 +1,7 @@
 {
-  "outputDirectory": "public",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
   "cleanUrls": false,
   "trailingSlash": false
 }
