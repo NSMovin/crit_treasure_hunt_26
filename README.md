@@ -613,22 +613,22 @@ for name in ['users', 'tasks', 'attempts', 'session_scores']:
 
 ## Crit-Team Contributors
 
-| Name | Role |
-|---|---|
-| Naeem Shovon Shuvro (261035005) | Lead Developer |
-| Shovon Chowdhury (261035044) | Lead Developer |
-| Naeem Shovon Shuvro | Game Design |
-| Shovan Chowdhury | Game Design |
-| Sanjida Koyel | Game Design |
-| Minha Tasnim  | Game Design |
-| Mahbub Alam Masum | Game Design |
-| Naeem Shovon Shuvro & Shovon Chowdhury | UI / UX Design |
-| Mahbub Alam Masum (261035004) | Event Coordination |
-| Tanzil Ahmed Bhuiyan (261035003) | QA / Testing |
-| Sanjida Koyel (261035***) | QA / Testing |
-| Minha Tasnim (261035***) | QA / Testing |
-| MD.Rafi Alam Khan (261035***) | QA / Testing |
-| MD Saifuddin (261035***) | QA / Testing |
+| Name | Role | E-mail |
+|---|---|---|
+| Naeem Shovon Shuvro (261035005) | Lead Developer | shuvromovin50@gmail.com |
+| Shovon Chowdhury (261035044) | Lead Developer | shovanchowdhury02@gmail.com |
+| Naeem Shovon Shuvro | Game Design | - |
+| Shovan Chowdhury | Game Design | - |
+| Sanjida Koyel  (261035053) | Game Design | sanjidasaba842@gmail.com |
+| Minha Tasnim  (261035045)  | Game Design | mnhtsnm11@gmail.com |
+| Mahbub Alam Masum (261035004) | Game Design | fmnakib@gmail.com |
+| Naeem Shovon Shuvro & Shovon Chowdhury | UI / UX Design | - |
+| Mahbub Alam Masum | Event Coordination | - |
+| Tanzil Ahmed Bhuiyan (261035003) | QA / Testing | bhuiyanahmedtanzil74@gmail.com |
+| Sanjida Koyel | QA / Testing | - |
+| Minha Tasnim | QA / Testing | - |
+| MD.Rafi Alam Khan (261035032) | QA / Testing | rafi.alam.khan2004@gmail.com |
+| MD Saifuddin (261035014) | QA / Testing | saifuddinmanik085@gmail.com |
 
 ---
 
